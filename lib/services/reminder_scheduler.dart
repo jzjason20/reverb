@@ -87,7 +87,7 @@ class LocalNotificationReminderScheduler implements ReminderScheduler {
 
     await _plugin.zonedSchedule(
       id: _notificationId(entry),
-      title: 'Reverb reminder',
+      title: '⏰ Reminder',
       body: entry.taskTitle ?? entry.summary,
       scheduledDate: tz.TZDateTime.from(entry.triggerTime!, tz.local),
       notificationDetails: const NotificationDetails(

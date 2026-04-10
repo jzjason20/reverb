@@ -22,7 +22,6 @@ class ReverbHomeScreen extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: const Color(0xFFF4EFE8),
           body: SafeArea(
             child: Column(
               children: [
@@ -55,24 +54,17 @@ class _HeroPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF11231F), Color(0xFF2D5047)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: isDark ? const Color(0xFF1E1E24) : const Color(0xFFEBE0D2), // Subtle theme aware clean background
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.black12,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 24,
-            offset: Offset(0, 16),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,10 +74,13 @@ class _HeroPanel extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: isDark ? Colors.black26 : Colors.white54,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.multitrack_audio, color: Colors.white),
+                child: Icon(
+                  Icons.multitrack_audio, 
+                  color: theme.textTheme.headlineMedium?.color,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -94,15 +89,11 @@ class _HeroPanel extends StatelessWidget {
                   children: [
                     Text(
                       'Reverb',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: Colors.white,
-                      ),
+                      style: theme.textTheme.headlineMedium,
                     ),
                     Text(
-                      'Capture fast. Sort later. Recall when it matters.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFDCE7E2),
-                      ),
+                      'Dump your brain here. Future you will deal with it.',
+                      style: theme.textTheme.bodyMedium,
                     ),
                   ],
                 ),
@@ -111,28 +102,28 @@ class _HeroPanel extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 12,
+            runSpacing: 12,
             children: [
               _MetricPill(
-                label: 'Open todos',
+                label: 'Stuff to do',
                 value: controller.openTodoCount.toString(),
               ),
               _MetricPill(
-                label: 'Ideas',
+                label: 'Shower thoughts',
                 value: controller.countFor(MemoryType.idea).toString(),
               ),
               _MetricPill(
-                label: 'Reminders',
+                label: 'Timebombs',
                 value: controller.countFor(MemoryType.reminder).toString(),
               ),
             ],
           ),
           if (controller.upcomingReminders.isNotEmpty) ...[
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             Text(
-              'Upcoming',
-              style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+              'Future nags',
+              style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             ...controller.upcomingReminders.map(
@@ -140,9 +131,7 @@ class _HeroPanel extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   '${entry.taskTitle ?? entry.summary} • ${_formatReminder(entry.triggerTime!)}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFFDCE7E2),
-                  ),
+                  style: theme.textTheme.bodyMedium,
                 ),
               ),
             ),
@@ -168,10 +157,13 @@ class _MetricPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: isDark ? Colors.black26 : Colors.white54,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -179,15 +171,11 @@ class _MetricPill extends StatelessWidget {
         children: [
           Text(
             value,
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(color: Colors.white),
+            style: theme.textTheme.titleLarge,
           ),
           Text(
             label,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: const Color(0xFFDCE7E2)),
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -247,13 +235,13 @@ class _FeedSection extends StatelessWidget {
   String _filterLabel(FeedFilter filter) {
     switch (filter) {
       case FeedFilter.all:
-        return 'All';
+        return 'Everything';
       case FeedFilter.todos:
-        return 'Todos';
+        return 'Need to do';
       case FeedFilter.ideas:
-        return 'Ideas';
+        return 'Genius stuff';
       case FeedFilter.thoughts:
-        return 'Thoughts';
+        return 'Random noise';
     }
   }
 }
@@ -263,6 +251,8 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -272,19 +262,20 @@ class _EmptyState extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFFE0D8CC),
+                color: isDark ? Colors.white10 : const Color(0xFFE0D8CC),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(Icons.graphic_eq, size: 42),
             ),
             const SizedBox(height: 18),
             Text(
-              'Your memory feed is clear.',
+              'Zero thoughts recorded.',
               style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Capture a thought to start building a local-first log that stays ready for future sync.',
+              'Scream into the void below. We promise to remember it forever.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -306,16 +297,16 @@ class _CaptureButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return FloatingActionButton.extended(
-      backgroundColor: const Color(0xFFCC5C3B),
-      foregroundColor: Colors.white,
       onPressed: controller.isProcessing
           ? null
           : () async {
               await showModalBottomSheet<void>(
                 context: context,
                 isScrollControlled: true,
-                backgroundColor: const Color(0xFFF7F2EA),
+                backgroundColor: theme.colorScheme.surface,
                 builder: (_) => CaptureSheet(
                   controller: controller,
                   speechCaptureService: speechCaptureService,
@@ -332,7 +323,7 @@ class _CaptureButton extends StatelessWidget {
               ),
             )
           : const Icon(Icons.mic_rounded),
-      label: Text(controller.isProcessing ? 'Processing...' : 'Capture memory'),
+      label: Text(controller.isProcessing ? 'Processing your ramblings...' : 'Yell at your phone'),
     );
   }
 }

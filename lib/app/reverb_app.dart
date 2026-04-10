@@ -20,7 +20,9 @@ class ReverbApp extends StatelessWidget {
     return MaterialApp(
       title: 'Reverb',
       debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
+      themeMode: ThemeMode.system,
+      theme: AppTheme.lightTemplate,
+      darkTheme: AppTheme.darkTemplate,
       home: ReverbHomeScreen(
         controller: controller,
         speechCaptureService: speechCaptureService,

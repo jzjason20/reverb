@@ -27,9 +27,9 @@ class _CaptureSheetState extends State<CaptureSheet> {
   String? _speechError;
 
   static const _suggestions = [
-    'i need to send the updated pitch deck tonight',
-    'idea: stitch together scattered voice notes into a weekly review',
-    'remind me to stretch in 45 minutes',
+    'I need to send the updated pitch deck tonight',
+    'Idea: stitch scattered voice notes into a weekly review',
+    'Remind me to stretch in 45 minutes or else',
   ];
 
   @override
@@ -92,7 +92,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
           );
           if (isFinal) {
             _isListening = false;
-            _statusText = 'Transcript captured. Adjust it if needed.';
+            _statusText = 'Transcript captured. Fix any weird words.';
           }
         });
       },
@@ -118,7 +118,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
         setState(() {
           _isListening = false;
           _speechError = message;
-          _statusText = 'Speech capture stopped. You can type or try again.';
+          _statusText = 'Speech capture stopped. Type or try again.';
         });
       },
       onSoundLevel: (level) {
@@ -135,6 +135,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 20, 20, viewInsets + 24),
@@ -143,23 +145,26 @@ class _CaptureSheetState extends State<CaptureSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Capture memory',
-            style: Theme.of(context).textTheme.headlineSmall,
+            'Capture something genius',
+            style: theme.textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
           Text(
             widget.controller.remoteSummaryEnabled
-                ? 'Local speech capture is on. OpenAI summaries are also enabled through your env config.'
-                : 'Local speech capture is on. Add your OpenAI key in `.env` when you want remote summaries.',
-            style: Theme.of(context).textTheme.bodyMedium,
+                ? 'Local speech capture is on. OpenAI magic summaries enabled.'
+                : 'Local speech capture is on. Add an OpenAI key later for magic summaries.',
+            style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: theme.cardTheme.color,
               borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: isDark ? Colors.white10 : Colors.black12,
+              )
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,9 +178,9 @@ class _CaptureSheetState extends State<CaptureSheet> {
                       ),
                       label: Text(
                         _isPreparingSpeech
-                            ? 'Preparing...'
+                            ? 'Warming up...'
                             : _isListening
-                            ? 'Stop listening'
+                            ? 'Make it stop!'
                             : 'Start listening',
                       ),
                     ),
@@ -187,8 +192,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
                         value: _isListening
                             ? (_soundLevel / 50).clamp(0.05, 1.0)
                             : 0.02,
-                        backgroundColor: const Color(0xFFEAE2D7),
-                        color: const Color(0xFFCC5C3B),
+                        backgroundColor: theme.colorScheme.surfaceContainer,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
                   ],
@@ -196,13 +201,13 @@ class _CaptureSheetState extends State<CaptureSheet> {
                 const SizedBox(height: 12),
                 Text(
                   _speechError ?? _statusText ?? '',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall,
                 ),
                 if (!_speechAvailable && !_isPreparingSpeech) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Manual fallback stays available, so capture still works even if the device recognizer does not.',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    'Manual fallback stays available, so capture still works even if the mic fails.',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
               ],
@@ -214,12 +219,27 @@ class _CaptureSheetState extends State<CaptureSheet> {
             minLines: 4,
             maxLines: 6,
             decoration: InputDecoration(
-              hintText: 'Say whatever is on your mind...',
+              hintText: 'Type your deep thoughts...',
               filled: true,
-              fillColor: Colors.white,
+              fillColor: theme.cardTheme.color,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
+                borderSide: BorderSide(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
               ),
             ),
           ),
@@ -239,7 +259,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
           const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
-            child: FilledButton(
+            child: FilledButton.tonal(
               onPressed: () async {
                 final navigator = Navigator.of(context);
                 if (_isListening) {
@@ -251,8 +271,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
                 }
               },
               child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Text('Save memory'),
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('Save this masterpiece', style: TextStyle(fontSize: 16)),
               ),
             ),
           ),

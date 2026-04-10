@@ -12,79 +12,71 @@ class MemoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _TypeBadge(type: entry.type),
-              const Spacer(),
-              Text(
-                _formatTimestamp(entry.createdAt),
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
               children: [
-                Checkbox(
-                  value: entry.isComplete,
-                  onChanged: (value) => onTodoChanged?.call(value ?? false),
-                ),
-                Expanded(
-                  child: Text(
-                    entry.taskTitle ?? entry.summary,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      decoration: entry.isComplete
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                    ),
-                  ),
+                _TypeBadge(type: entry.type),
+                const Spacer(),
+                Text(
+                  _formatTimestamp(entry.createdAt),
+                  style: theme.textTheme.bodySmall,
                 ),
               ],
             ),
-          ] else ...[
-            Text(entry.summary, style: theme.textTheme.titleLarge),
-          ],
-          if (entry.type == MemoryType.reminder &&
-              entry.triggerTime != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFFCC5C3B),
+            const SizedBox(height: 14),
+            if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+              Row(
+                children: [
+                  Checkbox(
+                    value: entry.isComplete,
+                    onChanged: (value) => onTodoChanged?.call(value ?? false),
+                  ),
+                  Expanded(
+                    child: Text(
+                      entry.taskTitle ?? entry.summary,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        decoration: entry.isComplete
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+            ] else ...[
+              Text(entry.summary, style: theme.textTheme.titleLarge),
+            ],
+            if (entry.type == MemoryType.reminder &&
+                entry.triggerTime != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary, // Using theme primary
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Text(entry.transcript, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _MetaChip(label: 'v${entry.version}'),
+                _MetaChip(label: _syncLabel(entry.syncStatus)),
+                if (entry.taskTitle != null && entry.type != MemoryType.todo)
+                  _MetaChip(label: entry.taskTitle!),
+              ],
             ),
           ],
-          const SizedBox(height: 10),
-          Text(entry.transcript, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MetaChip(label: 'v${entry.version}'),
-              _MetaChip(label: _syncLabel(entry.syncStatus)),
-              if (entry.taskTitle != null && entry.type != MemoryType.todo)
-                _MetaChip(label: entry.taskTitle!),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -122,11 +114,24 @@ class _TypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final palette = switch (type) {
-      MemoryType.thought => (const Color(0xFFEDE3D6), const Color(0xFF5A4C3A)),
-      MemoryType.todo => (const Color(0xFFDFF0E7), const Color(0xFF206348)),
-      MemoryType.idea => (const Color(0xFFE9E5FF), const Color(0xFF5948B0)),
-      MemoryType.reminder => (const Color(0xFFFFE2D7), const Color(0xFFB04E2C)),
+      MemoryType.thought => (
+        isDark ? const Color(0xFF382F24) : const Color(0xFFEDE3D6),
+        isDark ? const Color(0xFFEADBCA) : const Color(0xFF5A4C3A),
+      ),
+      MemoryType.todo => (
+        isDark ? const Color(0xFF204D36) : const Color(0xFFDFF0E7),
+        isDark ? const Color(0xFFBFE0D0) : const Color(0xFF206348),
+      ),
+      MemoryType.idea => (
+        isDark ? const Color(0xFF382D6E) : const Color(0xFFE9E5FF),
+        isDark ? const Color(0xFFD2CBF7) : const Color(0xFF5948B0),
+      ),
+      MemoryType.reminder => (
+        isDark ? const Color(0xFF6E311B) : const Color(0xFFFFE2D7),
+        isDark ? const Color(0xFFF7D1C3) : const Color(0xFFB04E2C),
+      ),
     };
 
     return Container(
@@ -137,10 +142,10 @@ class _TypeBadge extends StatelessWidget {
       ),
       child: Text(
         switch (type) {
-          MemoryType.thought => 'Thought',
-          MemoryType.todo => 'Todo',
-          MemoryType.idea => 'Idea',
-          MemoryType.reminder => 'Reminder',
+          MemoryType.thought => 'Brain Dump',
+          MemoryType.todo => 'To-Do',
+          MemoryType.idea => 'Lightbulb Moment',
+          MemoryType.reminder => 'Yell At Future Me',
         },
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: palette.$2,
@@ -158,13 +163,14 @@ class _MetaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4EFE8),
+        color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+      child: Text(label, style: theme.textTheme.bodySmall),
     );
   }
 }
