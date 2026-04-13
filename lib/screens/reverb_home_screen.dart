@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../controllers/reverb_controller.dart';
 import '../models/memory_entry.dart';
@@ -46,10 +47,24 @@ class ReverbHomeScreen extends StatelessWidget {
   }
 }
 
-class _HeroPanel extends StatelessWidget {
+class _HeroPanel extends StatefulWidget {
   const _HeroPanel({required this.controller});
 
   final ReverbController controller;
+
+  @override
+  State<_HeroPanel> createState() => _HeroPanelState();
+}
+
+class _HeroPanelState extends State<_HeroPanel> {
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,76 +72,70 @@ class _HeroPanel extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        color: isDark ? const Color(0xFF1E1E24) : const Color(0xFFEBE0D2), // Subtle theme aware clean background
-        border: Border.all(
-          color: isDark ? Colors.white10 : Colors.black12,
-        ),
-      ),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.black26 : Colors.white54,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  Icons.multitrack_audio, 
-                  color: theme.textTheme.headlineMedium?.color,
-                ),
+              Expanded(
+                child: _isSearching
+                    ? TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        style: theme.textTheme.bodyMedium,
+                        onChanged: (val) {
+                          widget.controller.setSearchQuery(val);
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search memories...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(999),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.white10
+                              : Colors.black.withAlpha(50),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                          ),
+                        ),
+                      )
+                    : Text('Reverb', style: theme.textTheme.headlineMedium),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Reverb',
-                      style: theme.textTheme.headlineMedium,
-                    ),
-                    Text(
-                      'Dump your brain here. Future you will deal with it.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
+              IconButton(
+                style: IconButton.styleFrom(
+                  backgroundColor:
+                      _isSearching || widget.controller.searchQuery.isNotEmpty
+                      ? (isDark ? Colors.white24 : Colors.black12)
+                      : (isDark ? Colors.white10 : Colors.black.withAlpha(50)),
                 ),
+                icon: Icon(_isSearching ? Icons.close : Icons.search),
+                onPressed: () {
+                  setState(() {
+                    if (_isSearching) {
+                      _isSearching = false;
+                      _searchController.clear();
+                      widget.controller.setSearchQuery('');
+                    } else {
+                      _isSearching = true;
+                      _searchController.text = widget.controller.searchQuery;
+                    }
+                  });
+                },
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _MetricPill(
-                label: 'Stuff to do',
-                value: controller.openTodoCount.toString(),
-              ),
-              _MetricPill(
-                label: 'Shower thoughts',
-                value: controller.countFor(MemoryType.idea).toString(),
-              ),
-              _MetricPill(
-                label: 'Timebombs',
-                value: controller.countFor(MemoryType.reminder).toString(),
-              ),
-            ],
-          ),
-          if (controller.upcomingReminders.isNotEmpty) ...[
-            const SizedBox(height: 20),
+          if (widget.controller.upcomingReminders.isNotEmpty) ...[
+            const SizedBox(height: 16),
             Text(
               'Future nags',
-              style: theme.textTheme.titleMedium,
+              style: theme.textTheme.titleMedium?.copyWith(fontSize: 14),
             ),
-            const SizedBox(height: 8),
-            ...controller.upcomingReminders.map(
+            const SizedBox(height: 6),
+            ...widget.controller.upcomingReminders.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
@@ -149,44 +158,47 @@ class _HeroPanel extends StatelessWidget {
   }
 }
 
-class _MetricPill extends StatelessWidget {
-  const _MetricPill({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.black26 : Colors.white54,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: theme.textTheme.titleLarge,
-          ),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FeedSection extends StatelessWidget {
+class _FeedSection extends StatefulWidget {
   const _FeedSection({required this.controller});
 
   final ReverbController controller;
+
+  @override
+  State<_FeedSection> createState() => _FeedSectionState();
+}
+
+class _FeedSectionState extends State<_FeedSection> {
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(
+      initialPage: FeedFilter.values.indexOf(widget.controller.activeFilter),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _FeedSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final targetPage = FeedFilter.values.indexOf(
+      widget.controller.activeFilter,
+    );
+    if (_pageController.hasClients &&
+        _pageController.page?.round() != targetPage) {
+      _pageController.animateToPage(
+        targetPage,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastOutSlowIn,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -200,9 +212,12 @@ class _FeedSection extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
-                  label: Text(_filterLabel(filter)),
-                  selected: controller.activeFilter == filter,
-                  onSelected: (_) => controller.selectFilter(filter),
+                  label: Text(
+                    '${_filterLabel(filter)}  ${_filterCount(filter)}',
+                  ),
+                  selected: widget.controller.activeFilter == filter,
+                  showCheckmark: false,
+                  onSelected: (_) => widget.controller.selectFilter(filter),
                 ),
               );
             }).toList(),
@@ -210,27 +225,86 @@ class _FeedSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: controller.visibleEntries.isEmpty
-              ? const _EmptyState()
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                  itemCount: controller.visibleEntries.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final entry = controller.visibleEntries[index];
-                    return MemoryCard(
-                      entry: entry,
-                      onTodoChanged: entry.type == MemoryType.todo
-                          ? (isComplete) =>
-                                controller.toggleTodo(entry.id, isComplete)
-                          : null,
+          child: PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              final newFilter = FeedFilter.values[index];
+              if (widget.controller.activeFilter != newFilter) {
+                widget.controller.selectFilter(newFilter);
+              }
+            },
+            itemCount: FeedFilter.values.length,
+            itemBuilder: (context, filterIndex) {
+              final currentFilter = FeedFilter.values[filterIndex];
+
+              // Filter logic applied locally for each page view so they render independently
+              var displayedEntries =
+                  widget.controller.entries
+                      .where((entry) => !entry.isDeleted)
+                      .toList()
+                    ..sort(
+                      (left, right) =>
+                          right.createdAt.compareTo(left.createdAt),
                     );
-                  },
-                ),
+
+              if (widget.controller.searchQuery.isNotEmpty) {
+                final q = widget.controller.searchQuery.toLowerCase();
+                displayedEntries = displayedEntries.where((entry) {
+                  return entry.summary.toLowerCase().contains(q) ||
+                      entry.transcript.toLowerCase().contains(q) ||
+                      (entry.taskTitle?.toLowerCase().contains(q) ?? false);
+                }).toList();
+              }
+
+              switch (currentFilter) {
+                case FeedFilter.all:
+                  break;
+                case FeedFilter.todos:
+                  displayedEntries = displayedEntries
+                      .where((entry) => entry.type == MemoryType.todo)
+                      .toList();
+                  break;
+                case FeedFilter.ideas:
+                  displayedEntries = displayedEntries
+                      .where((entry) => entry.type == MemoryType.idea)
+                      .toList();
+                  break;
+                case FeedFilter.thoughts:
+                  displayedEntries = displayedEntries
+                      .where((entry) => entry.type == MemoryType.thought)
+                      .toList();
+                  break;
+              }
+
+              if (displayedEntries.isEmpty) {
+                return const _EmptyState();
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                itemCount: displayedEntries.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final entry = displayedEntries[index];
+                  return MemoryCard(
+                    entry: entry,
+                    onTodoChanged: entry.type == MemoryType.todo
+                        ? (isComplete) =>
+                              widget.controller.toggleTodo(entry.id, isComplete)
+                        : null,
+                    onDelete: () => _confirmDelete(context, entry),
+                    onTap: () => _showEntryDetails(context, entry),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
   }
+
+  // --- Utility functions ---
 
   String _filterLabel(FeedFilter filter) {
     switch (filter) {
@@ -244,6 +318,64 @@ class _FeedSection extends StatelessWidget {
         return 'Random noise';
     }
   }
+
+  int _filterCount(FeedFilter filter) {
+    switch (filter) {
+      case FeedFilter.all:
+        return widget.controller.entries.where((e) => !e.isDeleted).length;
+      case FeedFilter.todos:
+        return widget.controller.openTodoCount;
+      case FeedFilter.ideas:
+        return widget.controller.countFor(MemoryType.idea);
+      case FeedFilter.thoughts:
+        return widget.controller.countFor(MemoryType.thought);
+    }
+  }
+
+  Future<void> _confirmDelete(BuildContext context, MemoryEntry entry) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete memory?'),
+          content: Text(
+            entry.summary.isNotEmpty
+                ? entry.summary
+                : 'This entry will be removed from your feed.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete == true) {
+      await widget.controller.deleteEntry(entry.id);
+    }
+  }
+
+  Future<void> _showEntryDetails(
+    BuildContext context,
+    MemoryEntry entry,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _EntryDetailSheet(entry: entry),
+    );
+  }
 }
 
 class _EmptyState extends StatelessWidget {
@@ -252,7 +384,7 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -298,7 +430,7 @@ class _CaptureButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return FloatingActionButton.extended(
       onPressed: controller.isProcessing
           ? null
@@ -323,7 +455,243 @@ class _CaptureButton extends StatelessWidget {
               ),
             )
           : const Icon(Icons.mic_rounded),
-      label: Text(controller.isProcessing ? 'Processing your ramblings...' : 'Yell at your phone'),
+      label: Text(
+        controller.isProcessing
+            ? 'Processing your ramblings...'
+            : 'Yell at your phone',
+      ),
+    );
+  }
+}
+
+// ── Entry detail bottom sheet ──────────────────────────────────────────────
+
+class _EntryDetailSheet extends StatelessWidget {
+  const _EntryDetailSheet({required this.entry});
+
+  final MemoryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurface.withAlpha(40),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Type badge + timestamp row
+                      Row(
+                        children: [
+                          MemoryTypeBadge(type: entry.type),
+                          const Spacer(),
+                          Text(
+                            _fullDate(entry.createdAt),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Summary section
+                      _SectionLabel(label: 'Summary'),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.summary,
+                              style: theme.textTheme.titleMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _CopyIconButton(
+                            value: entry.summary,
+                            tooltip: 'Copy summary',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Transcript section
+                      _SectionLabel(label: 'Transcript'),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.transcript,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _CopyIconButton(
+                            value: entry.transcript,
+                            tooltip: 'Copy transcript',
+                          ),
+                        ],
+                      ),
+
+                      // Reminder time
+                      if (entry.type == MemoryType.reminder &&
+                          entry.triggerTime != null) ...[
+                        const SizedBox(height: 20),
+                        _SectionLabel(label: 'Scheduled for'),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${_fullDate(entry.triggerTime!)} at ${_clockStr(entry.triggerTime!)}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+
+                      // Todo status
+                      if (entry.type == MemoryType.todo) ...[
+                        const SizedBox(height: 20),
+                        _SectionLabel(label: 'Status'),
+                        const SizedBox(height: 6),
+                        Text(
+                          entry.isComplete
+                              ? '✓ Done — you absolute legend'
+                              : 'Still on the list...',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ],
+
+                      const SizedBox(height: 28),
+                      // Close button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text('Close'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _clockStr(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final suffix = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  String _fullDate(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        letterSpacing: 1.1,
+        color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
+      ),
+    );
+  }
+}
+
+class _CopyIconButton extends StatefulWidget {
+  const _CopyIconButton({required this.value, required this.tooltip});
+
+  final String value;
+  final String tooltip;
+
+  @override
+  State<_CopyIconButton> createState() => _CopyIconButtonState();
+}
+
+class _CopyIconButtonState extends State<_CopyIconButton> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.value));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied 👌'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        width: 140,
+      ),
+    );
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: widget.tooltip,
+      icon: Icon(_copied ? Icons.check_rounded : Icons.copy_rounded, size: 18),
+      onPressed: _copy,
     );
   }
 }

@@ -22,6 +22,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
   bool _isPreparingSpeech = true;
   bool _speechAvailable = false;
   bool _isListening = false;
+  bool _userRequestedStop = false;
+  String _priorText = '';
   double _soundLevel = 0;
   String? _statusText;
   String? _speechError;
@@ -63,10 +65,9 @@ class _CaptureSheetState extends State<CaptureSheet> {
 
   Future<void> _toggleListening() async {
     if (_isListening) {
+      _userRequestedStop = true;
       await widget.speechCaptureService.stopListening();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _isListening = false;
         _statusText = 'Review the transcript, then save it.';
@@ -74,60 +75,63 @@ class _CaptureSheetState extends State<CaptureSheet> {
       return;
     }
 
+    _userRequestedStop = false;
+    _startListeningSession();
+  }
+
+  void _startListeningSession() {
+    // Capture whatever is already in the box — new speech appends to it.
+    _priorText = _textController.text.trimRight();
+
     setState(() {
       _speechError = null;
       _isListening = true;
       _statusText = 'Listening on device...';
     });
 
-    await widget.speechCaptureService.startListening(
+    widget.speechCaptureService.startListening(
       onTranscript: (transcript, isFinal) {
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
+        final prefix = _priorText.isEmpty ? '' : '$_priorText ';
         setState(() {
-          _textController.text = transcript;
+          _textController.text = '$prefix$transcript';
           _textController.selection = TextSelection.collapsed(
             offset: _textController.text.length,
           );
-          if (isFinal) {
-            _isListening = false;
-            _statusText = 'Transcript captured. Fix any weird words.';
-          }
         });
+        // Don't flip _isListening on isFinal — let onStatus be authoritative
+        // so we don't flicker when we auto-restart the session.
       },
       onStatus: (status) {
-        if (!mounted) {
-          return;
-        }
-
+        if (!mounted) return;
         final normalized = status.toLowerCase();
-        setState(() {
-          if (normalized == 'listening') {
+        if (normalized == 'listening') {
+          setState(() {
             _isListening = true;
             _statusText = 'Listening on device...';
-          } else if (normalized == 'done' || normalized == 'notlistening') {
-            _isListening = false;
+          });
+        } else if (normalized == 'done' || normalized == 'notlistening') {
+          if (!_userRequestedStop) {
+            // Session ended naturally (OS timeout/pause limit).
+            // Transparently restart so the user never has to think about it.
+            _priorText = _textController.text.trimRight();
+            _startListeningSession();
+          } else {
+            if (mounted) setState(() => _isListening = false);
           }
-        });
+        }
       },
       onError: (message) {
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
         setState(() {
           _isListening = false;
           _speechError = message;
-          _statusText = 'Speech capture stopped. Type or try again.';
+          _statusText = 'Speech hiccup. Tap mic to keep going.';
         });
       },
       onSoundLevel: (level) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _soundLevel = level.clamp(0, 50);
-        });
+        if (!mounted) return;
+        setState(() => _soundLevel = level.clamp(0, 50));
       },
     );
   }
@@ -151,8 +155,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
           const SizedBox(height: 8),
           Text(
             widget.controller.remoteSummaryEnabled
-                ? 'Local speech capture is on. OpenAI magic summaries enabled.'
-                : 'Local speech capture is on. Add an OpenAI key later for magic summaries.',
+                ? 'Local speech capture is on. Gemini AI summaries enabled.'
+                : 'Local speech capture is on. Add a Gemini key later for magic summaries.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
@@ -164,7 +168,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: isDark ? Colors.white10 : Colors.black12,
-              )
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,7 +221,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
           TextField(
             controller: _textController,
             minLines: 4,
-            maxLines: 6,
+            maxLines: 12,
             decoration: InputDecoration(
               hintText: 'Type your deep thoughts...',
               filled: true,
@@ -272,7 +276,10 @@ class _CaptureSheetState extends State<CaptureSheet> {
               },
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('Save this masterpiece', style: TextStyle(fontSize: 16)),
+                child: Text(
+                  'Save this masterpiece',
+                  style: TextStyle(fontSize: 16),
+                ),
               ),
             ),
           ),

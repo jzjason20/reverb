@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const _accent = Color(0xFFCC5C3B);
@@ -19,7 +20,9 @@ class AppTheme {
         surfaceContainer: surface,
       ),
       scaffoldBackgroundColor: background,
-      textTheme: _buildTextTheme(primaryText, secondaryText),
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(
+        _buildTextTheme(primaryText, secondaryText),
+      ),
       chipTheme: _buildChipTheme(primaryText, const Color(0xFFE7DED1)),
       cardTheme: CardThemeData(
         color: Colors.white,
@@ -53,7 +56,9 @@ class AppTheme {
         surfaceContainer: surface,
       ),
       scaffoldBackgroundColor: background,
-      textTheme: _buildTextTheme(primaryText, secondaryText),
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(
+        _buildTextTheme(primaryText, secondaryText),
+      ),
       chipTheme: _buildChipTheme(primaryText, const Color(0xFF2C2C2C)),
       cardTheme: CardThemeData(
         color: surface,

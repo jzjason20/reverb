@@ -4,7 +4,7 @@ import '../repositories/in_memory_memory_repository.dart';
 import '../repositories/memory_repository.dart';
 import '../repositories/sqlite_memory_repository.dart';
 import '../services/memory_processor.dart';
-import '../services/openai_summary_service.dart';
+import '../services/gemini_summary_service.dart';
 import '../services/reminder_scheduler.dart';
 import '../services/speech_capture_service.dart';
 
@@ -40,7 +40,7 @@ class AppBootstrap {
       repository: repository,
       processor: processor,
       reminderScheduler: reminderScheduler,
-      summaryService: OpenAiSummaryService(environment: environment),
+      summaryService: GeminiSummaryService(environment: environment),
     );
     await controller.load();
 

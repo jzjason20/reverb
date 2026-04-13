@@ -3,10 +3,18 @@ import 'package:flutter/material.dart';
 import '../models/memory_entry.dart';
 
 class MemoryCard extends StatelessWidget {
-  const MemoryCard({super.key, required this.entry, this.onTodoChanged});
+  const MemoryCard({
+    super.key,
+    required this.entry,
+    this.onTodoChanged,
+    this.onDelete,
+    this.onTap,
+  });
 
   final MemoryEntry entry;
   final ValueChanged<bool>? onTodoChanged;
+  final VoidCallback? onDelete;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -14,101 +22,164 @@ class MemoryCard extends StatelessWidget {
 
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _TypeBadge(type: entry.type),
-                const Spacer(),
-                Text(
-                  _formatTimestamp(entry.createdAt),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  Checkbox(
-                    value: entry.isComplete,
-                    onChanged: (value) => onTodoChanged?.call(value ?? false),
+                  MemoryTypeBadge(type: entry.type),
+                  const Spacer(),
+                  Text(
+                    _smartTimestamp(entry.createdAt),
+                    style: theme.textTheme.bodySmall,
                   ),
-                  Expanded(
-                    child: Text(
-                      entry.taskTitle ?? entry.summary,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        decoration: entry.isComplete
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
-                      ),
-                    ),
+                  PopupMenuButton<_CardAction>(
+                    tooltip: 'Entry actions',
+                    onSelected: (action) {
+                      if (action == _CardAction.delete) {
+                        onDelete?.call();
+                      }
+                    },
+                    itemBuilder: (context) {
+                      return const [
+                        PopupMenuItem<_CardAction>(
+                          value: _CardAction.delete,
+                          child: Text('Delete'),
+                        ),
+                      ];
+                    },
                   ),
                 ],
               ),
-            ] else ...[
-              Text(entry.summary, style: theme.textTheme.titleLarge),
-            ],
-            if (entry.type == MemoryType.reminder &&
-                entry.triggerTime != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.primary, // Using theme primary
+              const SizedBox(height: 14),
+              if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+                Row(
+                  children: [
+                    Checkbox(
+                      value: entry.isComplete,
+                      onChanged: (value) => onTodoChanged?.call(value ?? false),
+                    ),
+                    Expanded(
+                      child: Text(
+                        entry.taskTitle ?? entry.summary,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          decoration: entry.isComplete
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Text(entry.transcript, style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _MetaChip(label: 'v${entry.version}'),
-                _MetaChip(label: _syncLabel(entry.syncStatus)),
-                if (entry.taskTitle != null && entry.type != MemoryType.todo)
-                  _MetaChip(label: entry.taskTitle!),
+              ] else ...[
+                Text(entry.summary, style: theme.textTheme.titleLarge),
               ],
-            ),
-          ],
+              if (entry.type == MemoryType.reminder &&
+                  entry.triggerTime != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+              if (_shouldShowTranscriptPreview(entry)) ...[
+                const SizedBox(height: 8),
+                Text(
+                  entry.transcript,
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  String _formatTimestamp(DateTime dateTime, {bool includeDate = false}) {
-    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
-    if (!includeDate) {
-      return '$hour:$minute $suffix';
+  // Show a 2-line transcript preview only for thought/idea cards where the
+  // Gemini summary meaningfully differs from the raw transcript.
+  bool _shouldShowTranscriptPreview(MemoryEntry entry) {
+    if (entry.type == MemoryType.todo || entry.type == MemoryType.reminder) {
+      return false;
     }
-    return '${dateTime.month}/${dateTime.day} • $hour:$minute $suffix';
+    final s = entry.summary.toLowerCase().trim();
+    final t = entry.transcript.toLowerCase().trim();
+    // Skip if they're basically the same string or one contains the other fully
+    if (s == t || t.startsWith(s) || s == t.replaceAll(RegExp(r'[.!?]$'), '')) {
+      return false;
+    }
+    return true;
   }
 
-  String _syncLabel(SyncStatus status) {
-    switch (status) {
-      case SyncStatus.localOnly:
-        return 'local only';
-      case SyncStatus.pendingUpload:
-        return 'sync-ready';
-      case SyncStatus.synced:
-        return 'synced';
-      case SyncStatus.pendingDelete:
-        return 'pending delete';
-      case SyncStatus.conflict:
-        return 'needs review';
+  String _clockStr(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final suffix = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  String _smartTimestamp(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return _clockStr(dt);
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) {
+      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return names[dt.weekday - 1];
     }
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day}';
+  }
+
+  String _formatTimestamp(DateTime dateTime, {bool includeDate = false}) {
+    final timeStr = _clockStr(dateTime);
+    if (!includeDate) return timeStr;
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[dateTime.month - 1]} ${dateTime.day} • $timeStr';
   }
 }
 
-class _TypeBadge extends StatelessWidget {
-  const _TypeBadge({required this.type});
+enum _CardAction { delete }
+
+class MemoryTypeBadge extends StatelessWidget {
+  const MemoryTypeBadge({super.key, required this.type});
 
   final MemoryType type;
 
@@ -152,25 +223,6 @@ class _TypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(label, style: theme.textTheme.bodySmall),
     );
   }
 }

@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import '../models/memory_entry.dart';
 import '../repositories/memory_repository.dart';
+import '../services/gemini_summary_service.dart';
 import '../services/memory_processor.dart';
-import '../services/openai_summary_service.dart';
 import '../services/reminder_scheduler.dart';
 
 enum FeedFilter { all, todos, ideas, thoughts }
@@ -26,20 +26,36 @@ class ReverbController extends ChangeNotifier {
 
   List<MemoryEntry> _entries = const [];
   FeedFilter _activeFilter = FeedFilter.all;
+  String _searchQuery = '';
   bool _isLoading = false;
   bool _isProcessing = false;
   String? _lastErrorMessage;
 
   List<MemoryEntry> get entries => List.unmodifiable(_entries);
   FeedFilter get activeFilter => _activeFilter;
+  String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
   bool get isProcessing => _isProcessing;
   bool get remoteSummaryEnabled => _summaryService.isConfigured;
   String? get lastErrorMessage => _lastErrorMessage;
 
+  void setSearchQuery(String query) {
+    _searchQuery = query;
+    notifyListeners();
+  }
+
   List<MemoryEntry> get visibleEntries {
-    final liveEntries = _entries.where((entry) => !entry.isDeleted).toList()
+    var liveEntries = _entries.where((entry) => !entry.isDeleted).toList()
       ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      liveEntries = liveEntries.where((entry) {
+        return entry.summary.toLowerCase().contains(q) ||
+            entry.transcript.toLowerCase().contains(q) ||
+            (entry.taskTitle?.toLowerCase().contains(q) ?? false);
+      }).toList();
+    }
 
     switch (_activeFilter) {
       case FeedFilter.all:
@@ -120,14 +136,45 @@ class ReverbController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 1. Always build a complete, valid entry using deterministic rules first.
+      //    This is the guaranteed fallback — it works 100% offline.
       var entry = _processor.processTranscript(transcript);
-      final remoteSummary = await _summaryService.summarize(entry);
-      if (remoteSummary != null && remoteSummary.trim().isNotEmpty) {
+
+      // 2. Attempt AI enrichment (classification + summary + taskTitle + time).
+      //    If offline, timed-out, or API key missing, enrich() returns null and
+      //    we proceed with the deterministic entry unchanged.
+      final ai = await _summaryService.enrich(transcript, entry.createdAt);
+      if (ai != null) {
+        var aiType = ai.type ?? entry.type;
+        var aiTaskTitle = ai.taskTitle ?? entry.taskTitle;
+
+        // Resolve AI-supplied reminder time from ISO string.
+        DateTime? aiTriggerTime = entry.triggerTime;
+        if (aiType == MemoryType.reminder && ai.triggerTimeIso != null) {
+          aiTriggerTime =
+              DateTime.tryParse(ai.triggerTimeIso!) ?? entry.triggerTime;
+        }
+
+        // Apply the same safety rule as the deterministic path: a reminder
+        // without a resolvable time is demoted to a todo.
+        if (aiType == MemoryType.reminder && aiTriggerTime == null) {
+          aiType = MemoryType.todo;
+        }
+
+        // For non-todo/reminder types taskTitle is meaningless.
+        if (aiType != MemoryType.todo && aiType != MemoryType.reminder) {
+          aiTaskTitle = null;
+        }
+
         entry = entry.copyWith(
-          summary: remoteSummary.trim(),
+          type: aiType,
+          summary: ai.summary ?? entry.summary,
+          taskTitle: aiTaskTitle,
+          triggerTime: aiTriggerTime,
           metadata: <String, Object?>{
             ...entry.metadata,
-            'summary_provider': 'openai',
+            'summary_provider': 'gemini',
+            'classification_provider': 'gemini',
           },
         );
       }
@@ -157,6 +204,26 @@ class ReverbController extends ChangeNotifier {
     );
 
     await _repository.upsertEntry(updated);
+    _entries = await _repository.fetchEntries();
+    notifyListeners();
+  }
+
+  Future<void> deleteEntry(String entryId) async {
+    final current = _entries.where((entry) => entry.id == entryId).firstOrNull;
+    if (current == null || current.isDeleted) {
+      return;
+    }
+
+    final deletedEntry = current.copyWith(
+      updatedAt: DateTime.now(),
+      deletedAt: DateTime.now(),
+      version: current.version + 1,
+      syncStatus: SyncStatus.pendingDelete,
+      metadata: <String, Object?>{...current.metadata, 'deleted_locally': true},
+    );
+
+    await _repository.upsertEntry(deletedEntry);
+    await _reminderScheduler.cancelReminder(current);
     _entries = await _repository.fetchEntries();
     notifyListeners();
   }

@@ -58,8 +58,8 @@ class DeviceSpeechCaptureService implements SpeechCaptureService {
       onResult: (SpeechRecognitionResult result) {
         onTranscript(result.recognizedWords, result.finalResult);
       },
-      listenFor: const Duration(minutes: 1),
-      pauseFor: const Duration(seconds: 3),
+      listenFor: const Duration(minutes: 3),
+      pauseFor: const Duration(minutes: 3),
       onSoundLevelChange: onSoundLevel,
       listenOptions: SpeechListenOptions(
         cancelOnError: true,

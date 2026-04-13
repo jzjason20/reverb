@@ -9,6 +9,7 @@ import '../models/memory_entry.dart';
 abstract class ReminderScheduler {
   Future<void> initialize();
   Future<void> scheduleReminder(MemoryEntry entry);
+  Future<void> cancelReminder(MemoryEntry entry);
 }
 
 class LocalNotificationReminderScheduler implements ReminderScheduler {
@@ -102,6 +103,15 @@ class LocalNotificationReminderScheduler implements ReminderScheduler {
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
     );
+  }
+
+  @override
+  Future<void> cancelReminder(MemoryEntry entry) async {
+    if (!_initialized || kIsWeb) {
+      return;
+    }
+
+    await _plugin.cancel(id: _notificationId(entry));
   }
 
   Future<void> _requestPermissions() async {
