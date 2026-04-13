@@ -10,6 +10,7 @@ Future<void> main() async {
     ReverbApp(
       controller: bootstrap.controller,
       speechCaptureService: bootstrap.speechCaptureService,
+      whisperTranscribeService: bootstrap.whisperTranscribeService,
     ),
   );
 }

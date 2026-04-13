@@ -52,7 +52,7 @@ class GeminiSummaryService implements TranscriptSummaryService {
   static const _timeout = Duration(seconds: 8);
 
   @override
-  bool get isConfigured => _environment.hasGeminiKey;
+  bool get isConfigured => _environment.hasGeminiKey || _environment.hasProxy;
 
   // ── Legacy method kept for existing tests ──────────────────────────────────
   @override
@@ -70,12 +70,18 @@ class GeminiSummaryService implements TranscriptSummaryService {
     if (!isConfigured) return null;
 
     try {
-      final apiKey = _environment.geminiApiKey!;
       final model = _environment.summaryModel;
 
-      final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
-      );
+      final Uri url;
+      if (_environment.hasProxy) {
+        // Route through the Reverb proxy — API key lives on the server.
+        final base = _environment.proxyUrl!.replaceAll(RegExp(r'/$'), '');
+        url = Uri.parse('$base/api/gemini?model=$model');
+      } else {
+        url = Uri.parse(
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${_environment.geminiApiKey!}',
+        );
+      }
 
       final response = await _client
           .post(

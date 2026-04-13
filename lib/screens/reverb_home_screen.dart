@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../controllers/reverb_controller.dart';
 import '../models/memory_entry.dart';
 import '../services/speech_capture_service.dart';
+import '../services/whisper_transcribe_service.dart';
 import '../widgets/capture_sheet.dart';
 import '../widgets/memory_card.dart';
 
@@ -12,10 +13,12 @@ class ReverbHomeScreen extends StatelessWidget {
     super.key,
     required this.controller,
     required this.speechCaptureService,
+    this.whisperTranscribeService,
   });
 
   final ReverbController controller;
   final SpeechCaptureService speechCaptureService;
+  final WhisperTranscribeService? whisperTranscribeService;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +43,7 @@ class ReverbHomeScreen extends StatelessWidget {
           floatingActionButton: _CaptureButton(
             controller: controller,
             speechCaptureService: speechCaptureService,
+            whisperTranscribeService: whisperTranscribeService,
           ),
         );
       },
@@ -422,10 +426,12 @@ class _CaptureButton extends StatelessWidget {
   const _CaptureButton({
     required this.controller,
     required this.speechCaptureService,
+    this.whisperTranscribeService,
   });
 
   final ReverbController controller;
   final SpeechCaptureService speechCaptureService;
+  final WhisperTranscribeService? whisperTranscribeService;
 
   @override
   Widget build(BuildContext context) {
@@ -442,6 +448,7 @@ class _CaptureButton extends StatelessWidget {
                 builder: (_) => CaptureSheet(
                   controller: controller,
                   speechCaptureService: speechCaptureService,
+                  whisperTranscribeService: whisperTranscribeService,
                 ),
               );
             },

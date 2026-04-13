@@ -7,12 +7,18 @@ import '../services/memory_processor.dart';
 import '../services/gemini_summary_service.dart';
 import '../services/reminder_scheduler.dart';
 import '../services/speech_capture_service.dart';
+import '../services/whisper_transcribe_service.dart';
 
 class AppBootstrap {
-  AppBootstrap({required this.controller, required this.speechCaptureService});
+  AppBootstrap({
+    required this.controller,
+    required this.speechCaptureService,
+    this.whisperTranscribeService,
+  });
 
   final ReverbController controller;
   final SpeechCaptureService speechCaptureService;
+  final WhisperTranscribeService? whisperTranscribeService;
 
   static Future<AppBootstrap> initialize() async {
     final environment = await AppEnvironment.load();
@@ -47,6 +53,9 @@ class AppBootstrap {
     return AppBootstrap(
       controller: controller,
       speechCaptureService: DeviceSpeechCaptureService(),
+      whisperTranscribeService: environment.hasProxy
+          ? WhisperTranscribeService(proxyBaseUrl: environment.proxyUrl!)
+          : null,
     );
   }
 }

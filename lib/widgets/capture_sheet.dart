@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../controllers/reverb_controller.dart';
 import '../services/speech_capture_service.dart';
+import '../services/whisper_transcribe_service.dart';
 
 class CaptureSheet extends StatefulWidget {
   const CaptureSheet({
     super.key,
     required this.controller,
     required this.speechCaptureService,
+    this.whisperTranscribeService,
   });
 
   final ReverbController controller;
   final SpeechCaptureService speechCaptureService;
+  final WhisperTranscribeService? whisperTranscribeService;
 
   @override
   State<CaptureSheet> createState() => _CaptureSheetState();
@@ -19,11 +24,14 @@ class CaptureSheet extends StatefulWidget {
 
 class _CaptureSheetState extends State<CaptureSheet> {
   late final TextEditingController _textController;
+  final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isPreparingSpeech = true;
   bool _speechAvailable = false;
   bool _isListening = false;
+  bool _isTranscribing = false;
   bool _userRequestedStop = false;
   String _priorText = '';
+  String? _audioPath;
   double _soundLevel = 0;
   String? _statusText;
   String? _speechError;
@@ -44,6 +52,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
   @override
   void dispose() {
     widget.speechCaptureService.cancelListening();
+    _audioRecorder.dispose();
     _textController.dispose();
     super.dispose();
   }
@@ -66,12 +75,41 @@ class _CaptureSheetState extends State<CaptureSheet> {
   Future<void> _toggleListening() async {
     if (_isListening) {
       _userRequestedStop = true;
-      await widget.speechCaptureService.stopListening();
+      // Stop both STT and audio recording in parallel.
+      await Future.wait([
+        widget.speechCaptureService.stopListening(),
+        _audioRecorder.stop().then((path) => _audioPath = path),
+      ]);
       if (!mounted) return;
       setState(() {
         _isListening = false;
-        _statusText = 'Review the transcript, then save it.';
       });
+
+      // If Whisper is available, use it as the primary transcript.
+      if (widget.whisperTranscribeService != null && _audioPath != null) {
+        setState(() {
+          _isTranscribing = true;
+          _statusText = 'Transcribing with Whisper...';
+        });
+        final whisperText =
+            await widget.whisperTranscribeService!.transcribe(_audioPath!);
+        if (!mounted) return;
+        if (whisperText != null && whisperText.isNotEmpty) {
+          setState(() {
+            _textController.text = whisperText;
+            _textController.selection = TextSelection.collapsed(
+              offset: whisperText.length,
+            );
+          });
+        }
+        // else: keep the STT live preview already in the box
+        setState(() {
+          _isTranscribing = false;
+          _statusText = 'Review the transcript, then save it.';
+        });
+      } else {
+        setState(() => _statusText = 'Review the transcript, then save it.');
+      }
       return;
     }
 
@@ -86,8 +124,21 @@ class _CaptureSheetState extends State<CaptureSheet> {
     setState(() {
       _speechError = null;
       _isListening = true;
-      _statusText = 'Listening on device...';
+      _statusText = widget.whisperTranscribeService != null
+          ? 'Recording... Whisper will transcribe on stop.'
+          : 'Listening on device...';
     });
+
+    // Start audio file recording for Whisper (fire-and-forget, errors are silent).
+    if (widget.whisperTranscribeService != null) {
+      getTemporaryDirectory().then((dir) {
+        final path =
+            '${dir.path}/reverb_capture_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        _audioRecorder
+            .start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path)
+            .catchError((_) {});
+      });
+    }
 
     widget.speechCaptureService.startListening(
       onTranscript: (transcript, isFinal) {
@@ -155,8 +206,8 @@ class _CaptureSheetState extends State<CaptureSheet> {
           const SizedBox(height: 8),
           Text(
             widget.controller.remoteSummaryEnabled
-                ? 'Local speech capture is on. Gemini AI summaries enabled.'
-                : 'Local speech capture is on. Add a Gemini key later for magic summaries.',
+                ? 'Gemini AI summaries enabled.'
+                : 'Add a Gemini key later for magic summaries.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
@@ -176,13 +227,28 @@ class _CaptureSheetState extends State<CaptureSheet> {
                 Row(
                   children: [
                     FilledButton.icon(
-                      onPressed: _isPreparingSpeech ? null : _toggleListening,
-                      icon: Icon(
-                        _isListening ? Icons.stop_circle_outlined : Icons.mic,
-                      ),
+                      onPressed: (_isPreparingSpeech || _isTranscribing)
+                          ? null
+                          : _toggleListening,
+                      icon: _isTranscribing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              _isListening
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.mic,
+                            ),
                       label: Text(
                         _isPreparingSpeech
                             ? 'Warming up...'
+                            : _isTranscribing
+                            ? 'Transcribing...'
                             : _isListening
                             ? 'Make it stop!'
                             : 'Start listening',
@@ -264,16 +330,23 @@ class _CaptureSheetState extends State<CaptureSheet> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.tonal(
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                if (_isListening) {
-                  await widget.speechCaptureService.stopListening();
-                }
-                await widget.controller.captureTranscript(_textController.text);
-                if (mounted) {
-                  navigator.pop();
-                }
-              },
+              onPressed: _isTranscribing
+                  ? null
+                  : () async {
+                      final navigator = Navigator.of(context);
+                      if (_isListening) {
+                        _userRequestedStop = true;
+                        await Future.wait([
+                          widget.speechCaptureService.stopListening(),
+                          _audioRecorder
+                              .stop()
+                              .then((path) => _audioPath = path),
+                        ]);
+                      }
+                      await widget.controller
+                          .captureTranscript(_textController.text);
+                      if (mounted) navigator.pop();
+                    },
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Text(
