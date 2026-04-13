@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_environment.dart';
@@ -49,10 +50,10 @@ class GeminiSummaryService implements TranscriptSummaryService {
   final AppEnvironment _environment;
   final http.Client _client;
 
-  static const _timeout = Duration(seconds: 8);
+  static const _timeout = Duration(seconds: 25);
 
   @override
-  bool get isConfigured => _environment.hasGeminiKey || _environment.hasProxy;
+  bool get isConfigured => _environment.hasProxy;
 
   // ── Legacy method kept for existing tests ──────────────────────────────────
   @override
@@ -70,79 +71,28 @@ class GeminiSummaryService implements TranscriptSummaryService {
     if (!isConfigured) return null;
 
     try {
-      final model = _environment.summaryModel;
-
-      final Uri url;
-      if (_environment.hasProxy) {
-        // Route through the Reverb proxy — API key lives on the server.
-        final base = _environment.proxyUrl!.replaceAll(RegExp(r'/$'), '');
-        url = Uri.parse('$base/api/gemini?model=$model');
-      } else {
-        url = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${_environment.geminiApiKey!}',
-        );
-      }
+      final base = _environment.proxyUrl!.replaceAll(RegExp(r'/$'), '');
+      final url = Uri.parse('$base/api/enrich');
 
       final response = await _client
           .post(
             url,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              "system_instruction": {
-                "parts": [
-                  {
-                    "text":
-                        """You analyze voice notes for a personal memory app.
-Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
-{
-  "type": "thought" | "todo" | "idea" | "reminder",
-  "summary": "<one crisp sentence, max 80 chars, no emoji, no quotes>",
-  "taskTitle": "<cleaned task phrase if type is todo or reminder, otherwise null>",
-  "triggerTimeIso": "<ISO 8601 datetime if type is reminder with a resolvable time, otherwise null>"
-}
-
-Classification guide:
-- reminder: user explicitly wants to be notified at a future time
-- todo: action or task with no specific time ("need to", "should", "pick up", "call", "buy")
-- idea: creative, speculative, or invention-style thought ("what if", "idea:", "could build")
-- thought: general observation, reflection, or note that fits none of the above""",
-                  },
-                ],
-              },
-              "contents": [
-                {
-                  "parts": [
-                    {
-                      "text":
-                          "Captured at: ${capturedAt.toIso8601String()}\nTranscript: $transcript",
-                    },
-                  ],
-                },
-              ],
-              "generationConfig": {
-                "maxOutputTokens": 150,
-                "responseMimeType": "application/json",
-              },
+              'transcript': transcript,
+              'capturedAt': capturedAt.toIso8601String(),
             }),
           )
           .timeout(_timeout);
+
+      debugPrint('[Enrich] status=${response.statusCode}');
+      debugPrint('[Enrich] body=${response.body}');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
 
-      final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      final candidates = payload['candidates'] as List<dynamic>?;
-      if (candidates == null || candidates.isEmpty) return null;
-
-      final content = candidates.first['content'] as Map<String, dynamic>?;
-      final parts = content?['parts'] as List<dynamic>?;
-      if (parts == null || parts.isEmpty) return null;
-
-      final raw = parts.first['text'] as String?;
-      if (raw == null || raw.trim().isEmpty) return null;
-
-      final json = jsonDecode(raw.trim()) as Map<String, dynamic>;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
 
       final typeStr = json['type'] as String?;
       final MemoryType? parsedType = switch (typeStr) {
@@ -167,8 +117,8 @@ Classification guide:
             ? triggerTimeIso
             : null,
       );
-    } catch (_) {
-      // Network error, timeout, JSON parse failure, etc. — all safe to ignore.
+    } catch (e, st) {
+      debugPrint('[Enrich] error: $e\n$st');
       return null;
     }
   }
