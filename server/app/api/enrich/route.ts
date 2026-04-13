@@ -29,23 +29,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "transcript required" }, { status: 400 });
   }
 
-  const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+  // Responses API — replaces Chat Completions for all new projects.
+  const upstream = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      max_tokens: 256,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Captured at: ${capturedAt ?? new Date().toISOString()}\nTranscript: ${transcript}`,
-        },
-      ],
+      model: "gpt-5.4-nano",
+      instructions: SYSTEM_PROMPT,
+      input: `Captured at: ${capturedAt ?? new Date().toISOString()}\nTranscript: ${transcript}`,
+      text: { format: { type: "json_object" } },
+      store: false,
     }),
   });
 
@@ -55,14 +51,21 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await upstream.json();
-  const content = data?.choices?.[0]?.message?.content ?? null;
 
-  // Return just the enrichment JSON so the client doesn't have to unwrap the
-  // OpenAI response envelope.
+  // Responses API returns output as an array of typed items.
+  // Find the message item and pull its text content.
+  const messageItem = data?.output?.find(
+    (item: { type: string }) => item.type === "message",
+  );
+  const content = messageItem?.content?.[0]?.text ?? null;
+
   try {
     const parsed = JSON.parse(content);
     return NextResponse.json(parsed);
   } catch {
-    return NextResponse.json({ error: "bad upstream JSON", raw: content }, { status: 502 });
+    return NextResponse.json(
+      { error: "bad upstream JSON", raw: content },
+      { status: 502 },
+    );
   }
 }
