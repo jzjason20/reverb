@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({
       model: "gpt-5.4-nano",
       instructions: SYSTEM_PROMPT,
-      input: `Captured at: ${capturedAt ?? new Date().toISOString()}\nTranscript: ${transcript}`,
+      input: `Return JSON. Captured at: ${capturedAt ?? new Date().toISOString()}\nTranscript: ${transcript}`,
       text: { format: { type: "json_object" } },
       store: false,
     }),
