@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_environment.dart';
@@ -85,9 +84,6 @@ class GeminiSummaryService implements TranscriptSummaryService {
           )
           .timeout(_timeout);
 
-      debugPrint('[Enrich] status=${response.statusCode}');
-      debugPrint('[Enrich] body=${response.body}');
-
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
@@ -117,8 +113,7 @@ class GeminiSummaryService implements TranscriptSummaryService {
             ? triggerTimeIso
             : null,
       );
-    } catch (e, st) {
-      debugPrint('[Enrich] error: $e\n$st');
+    } catch (_) {
       return null;
     }
   }

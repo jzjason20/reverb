@@ -20,85 +20,121 @@ class MemoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  MemoryTypeBadge(type: entry.type),
-                  const Spacer(),
-                  Text(
-                    _smartTimestamp(entry.createdAt),
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  PopupMenuButton<_CardAction>(
-                    tooltip: 'Entry actions',
-                    onSelected: (action) {
-                      if (action == _CardAction.delete) {
-                        onDelete?.call();
-                      }
-                    },
-                    itemBuilder: (context) {
-                      return const [
-                        PopupMenuItem<_CardAction>(
-                          value: _CardAction.delete,
-                          child: Text('Delete'),
-                        ),
-                      ];
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+    return Dismissible(
+      key: ValueKey(entry.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Delete memory?'),
+          content: Text(
+            entry.summary.isNotEmpty
+                ? entry.summary
+                : 'This entry will be removed from your feed.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+      onDismissed: (_) => onDelete?.call(),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red.shade700,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
+      ),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
-                    Checkbox(
-                      value: entry.isComplete,
-                      onChanged: (value) => onTodoChanged?.call(value ?? false),
+                    MemoryTypeBadge(type: entry.type),
+                    const Spacer(),
+                    Text(
+                      _smartTimestamp(entry.createdAt),
+                      style: theme.textTheme.bodySmall,
                     ),
-                    Expanded(
-                      child: Text(
-                        entry.taskTitle ?? entry.summary,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          decoration: entry.isComplete
-                              ? TextDecoration.lineThrough
-                              : TextDecoration.none,
-                        ),
-                      ),
+                    PopupMenuButton<_CardAction>(
+                      tooltip: 'Entry actions',
+                      onSelected: (action) {
+                        if (action == _CardAction.delete) {
+                          onDelete?.call();
+                        }
+                      },
+                      itemBuilder: (context) {
+                        return const [
+                          PopupMenuItem<_CardAction>(
+                            value: _CardAction.delete,
+                            child: Text('Delete'),
+                          ),
+                        ];
+                      },
                     ),
                   ],
                 ),
-              ] else ...[
-                Text(entry.summary, style: theme.textTheme.titleLarge),
-              ],
-              if (entry.type == MemoryType.reminder &&
-                  entry.triggerTime != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                const SizedBox(height: 14),
+                if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: entry.isComplete,
+                        onChanged: (value) =>
+                            onTodoChanged?.call(value ?? false),
+                      ),
+                      Expanded(
+                        child: Text(
+                          entry.taskTitle ?? entry.summary,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            decoration: entry.isComplete
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ] else ...[
+                  Text(entry.summary, style: theme.textTheme.titleLarge),
+                ],
+                if (entry.type == MemoryType.reminder &&
+                    entry.triggerTime != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+                if (_shouldShowTranscriptPreview(entry)) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    entry.transcript,
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
-              if (_shouldShowTranscriptPreview(entry)) ...[
-                const SizedBox(height: 8),
-                Text(
-                  entry.transcript,
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),

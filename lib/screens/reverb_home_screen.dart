@@ -173,6 +173,20 @@ class _FeedSection extends StatefulWidget {
 
 class _FeedSectionState extends State<_FeedSection> {
   late final PageController _pageController;
+  String? _lastShownError;
+
+  void _onControllerChanged() {
+    final error = widget.controller.lastErrorMessage;
+    if (error != null && error != _lastShownError && mounted) {
+      _lastShownError = error;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+        );
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -180,6 +194,7 @@ class _FeedSectionState extends State<_FeedSection> {
     _pageController = PageController(
       initialPage: FeedFilter.values.indexOf(widget.controller.activeFilter),
     );
+    widget.controller.addListener(_onControllerChanged);
   }
 
   @override
@@ -200,6 +215,7 @@ class _FeedSectionState extends State<_FeedSection> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _pageController.dispose();
     super.dispose();
   }
@@ -231,6 +247,7 @@ class _FeedSectionState extends State<_FeedSection> {
         Expanded(
           child: PageView.builder(
             controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
             onPageChanged: (index) {
               final newFilter = FeedFilter.values[index];
               if (widget.controller.activeFilter != newFilter) {
@@ -296,7 +313,7 @@ class _FeedSectionState extends State<_FeedSection> {
                         ? (isComplete) =>
                               widget.controller.toggleTodo(entry.id, isComplete)
                         : null,
-                    onDelete: () => _confirmDelete(context, entry),
+                    onDelete: () => widget.controller.deleteEntry(entry.id),
                     onTap: () => _showEntryDetails(context, entry),
                   );
                 },
@@ -333,36 +350,6 @@ class _FeedSectionState extends State<_FeedSection> {
         return widget.controller.countFor(MemoryType.idea);
       case FeedFilter.thoughts:
         return widget.controller.countFor(MemoryType.thought);
-    }
-  }
-
-  Future<void> _confirmDelete(BuildContext context, MemoryEntry entry) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete memory?'),
-          content: Text(
-            entry.summary.isNotEmpty
-                ? entry.summary
-                : 'This entry will be removed from your feed.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldDelete == true) {
-      await widget.controller.deleteEntry(entry.id);
     }
   }
 
