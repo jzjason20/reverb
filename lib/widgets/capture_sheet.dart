@@ -91,8 +91,9 @@ class _CaptureSheetState extends State<CaptureSheet> {
           _isTranscribing = true;
           _statusText = 'Transcribing with Whisper...';
         });
-        final whisperText =
-            await widget.whisperTranscribeService!.transcribe(_audioPath!);
+        final whisperText = await widget.whisperTranscribeService!.transcribe(
+          _audioPath!,
+        );
         if (!mounted) return;
         if (whisperText != null && whisperText.isNotEmpty) {
           setState(() {
@@ -338,13 +339,14 @@ class _CaptureSheetState extends State<CaptureSheet> {
                         _userRequestedStop = true;
                         await Future.wait([
                           widget.speechCaptureService.stopListening(),
-                          _audioRecorder
-                              .stop()
-                              .then((path) => _audioPath = path),
+                          _audioRecorder.stop().then(
+                            (path) => _audioPath = path,
+                          ),
                         ]);
                       }
-                      await widget.controller
-                          .captureTranscript(_textController.text);
+                      await widget.controller.captureTranscript(
+                        _textController.text,
+                      );
                       if (mounted) navigator.pop();
                     },
               child: const Padding(
