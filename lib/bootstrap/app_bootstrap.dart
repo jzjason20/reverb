@@ -1,5 +1,6 @@
 import '../config/app_environment.dart';
 import '../controllers/reverb_controller.dart';
+import '../models/tag_definition.dart';
 import '../repositories/in_memory_memory_repository.dart';
 import '../repositories/memory_repository.dart';
 import '../repositories/sqlite_memory_repository.dart';
@@ -36,6 +37,16 @@ class AppBootstrap {
     } catch (_) {
       repository = InMemoryMemoryRepository(
         seedEntries: processor.buildSampleEntries(),
+        seedTags: [
+          TagDefinition(
+            id: TagDefinition.othersId,
+            name: TagDefinition.othersName,
+            colorValue: TagDefinition.othersColorValue,
+            isProtected: true,
+            createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        ],
       );
     }
 

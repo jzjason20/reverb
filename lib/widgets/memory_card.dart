@@ -6,12 +6,16 @@ class MemoryCard extends StatelessWidget {
   const MemoryCard({
     super.key,
     required this.entry,
+    required this.tagColors,
+    this.isProcessing = false,
     this.onTodoChanged,
     this.onDelete,
     this.onTap,
   });
 
   final MemoryEntry entry;
+  final Map<String, Color> tagColors;
+  final bool isProcessing;
   final ValueChanged<bool>? onTodoChanged;
   final VoidCallback? onDelete;
   final VoidCallback? onTap;
@@ -19,6 +23,10 @@ class MemoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final borderColor = _priorityBorderColor(entry);
+    final hasPriorityBorder =
+        entry.type == MemoryType.todo && borderColor.opacity > 0;
+    final preview = _secondaryPreview(entry);
 
     return Dismissible(
       key: ValueKey(entry.id),
@@ -26,12 +34,8 @@ class MemoryCard extends StatelessWidget {
       confirmDismiss: (_) => showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Delete memory?'),
-          content: Text(
-            entry.summary.isNotEmpty
-                ? entry.summary
-                : 'This entry will be removed from your feed.',
-          ),
+          title: const Text('Delete entry?'),
+          content: Text(entry.summary),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -49,91 +53,104 @@ class MemoryCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: Colors.red.shade700,
-          borderRadius: BorderRadius.circular(12),
+          color: const Color(0xFF991B1B),
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
+        child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    MemoryTypeBadge(type: entry.type),
-                    const Spacer(),
-                    Text(
-                      _smartTimestamp(entry.createdAt),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    PopupMenuButton<_CardAction>(
-                      tooltip: 'Entry actions',
-                      onSelected: (action) {
-                        if (action == _CardAction.delete) {
-                          onDelete?.call();
-                        }
-                      },
-                      itemBuilder: (context) {
-                        return const [
-                          PopupMenuItem<_CardAction>(
-                            value: _CardAction.delete,
-                            child: Text('Delete'),
-                          ),
-                        ];
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                if (entry.type == MemoryType.todo && onTodoChanged != null) ...[
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.dividerColor.withAlpha(50)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(18),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: hasPriorityBorder
+                    ? Border(left: BorderSide(color: borderColor, width: 4))
+                    : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
                     children: [
-                      Checkbox(
-                        value: entry.isComplete,
-                        onChanged: (value) =>
-                            onTodoChanged?.call(value ?? false),
-                      ),
+                      if (entry.type == MemoryType.todo &&
+                          onTodoChanged != null)
+                        Checkbox(
+                          value: entry.isComplete,
+                          onChanged: (value) =>
+                              onTodoChanged?.call(value ?? false),
+                        ),
                       Expanded(
                         child: Text(
-                          entry.taskTitle ?? entry.summary,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            decoration: entry.isComplete
-                                ? TextDecoration.lineThrough
-                                : TextDecoration.none,
-                          ),
+                          _typeLabel(entry.type).toUpperCase(),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                      Text(
+                        _smartTimestamp(entry.createdAt),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (isProcessing) ...[
+                    _ShimmerLine(widthFactor: 0.82),
+                    const SizedBox(height: 8),
+                    _ShimmerLine(widthFactor: 0.56),
+                    const SizedBox(height: 12),
+                    Text('Organizing...', style: theme.textTheme.bodySmall),
+                  ] else ...[
+                    Text(
+                      _primaryText(entry),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        decoration: entry.isComplete
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
+                      ),
+                    ),
+                    if (preview != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        preview,
+                        style: theme.textTheme.bodyMedium,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ...entry.tags.map(
+                        (tag) => _TagPill(
+                          label: tag,
+                          color: tagColors[tag] ?? const Color(0xFF6B7280),
                         ),
                       ),
                     ],
                   ),
-                ] else ...[
-                  Text(entry.summary, style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  Text(_metadata(entry), style: theme.textTheme.bodySmall),
                 ],
-                if (entry.type == MemoryType.reminder &&
-                    entry.triggerTime != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Scheduled for ${_formatTimestamp(entry.triggerTime!, includeDate: true)}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
-                if (_shouldShowTranscriptPreview(entry)) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    entry.transcript,
-                    style: theme.textTheme.bodySmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),
@@ -141,19 +158,92 @@ class MemoryCard extends StatelessWidget {
     );
   }
 
-  // Show a 2-line transcript preview only for thought/idea cards where the
-  // Gemini summary meaningfully differs from the raw transcript.
-  bool _shouldShowTranscriptPreview(MemoryEntry entry) {
-    if (entry.type == MemoryType.todo || entry.type == MemoryType.reminder) {
-      return false;
+  String _primaryText(MemoryEntry entry) {
+    if (entry.type == MemoryType.todo) {
+      return entry.taskTitle ?? entry.summary;
     }
-    final s = entry.summary.toLowerCase().trim();
-    final t = entry.transcript.toLowerCase().trim();
-    // Skip if they're basically the same string or one contains the other fully
-    if (s == t || t.startsWith(s) || s == t.replaceAll(RegExp(r'[.!?]$'), '')) {
-      return false;
+    return entry.summary;
+  }
+
+  String? _secondaryPreview(MemoryEntry entry) {
+    if (entry.type == MemoryType.todo) {
+      final transcript = entry.transcript.trim();
+      final title = (entry.taskTitle ?? '').trim();
+      if (transcript.isEmpty ||
+          title.isEmpty ||
+          transcript.toLowerCase() == title.toLowerCase()) {
+        return null;
+      }
+      return transcript;
     }
-    return true;
+
+    final transcript = entry.transcript.trim();
+    final summary = entry.summary.trim();
+    if (transcript.isEmpty ||
+        transcript.toLowerCase() == summary.toLowerCase()) {
+      return null;
+    }
+    return transcript;
+  }
+
+  String _metadata(MemoryEntry entry) {
+    final parts = <String>[_fullDate(entry.createdAt)];
+    if (entry.type == MemoryType.todo && entry.triggerTime != null) {
+      parts.add('Due ${_formatDue(entry.triggerTime!)}');
+    }
+    if (entry.type == MemoryType.todo &&
+        entry.priority != MemoryPriority.none) {
+      parts.add(_priorityLabel(entry.priority));
+    }
+    return parts.join(' • ');
+  }
+
+  String _typeLabel(MemoryType type) {
+    return switch (type) {
+      MemoryType.braindump => 'Braindump',
+      MemoryType.idea => 'Idea',
+      MemoryType.todo => 'Todo',
+    };
+  }
+
+  Color _priorityBorderColor(MemoryEntry entry) {
+    if (entry.type != MemoryType.todo) {
+      return Colors.transparent;
+    }
+
+    return switch (entry.priority) {
+      MemoryPriority.none => Colors.transparent,
+      MemoryPriority.low => const Color(0xFF5E81AC),
+      MemoryPriority.medium => const Color(0xFFD97706),
+      MemoryPriority.high => const Color(0xFFDC2626),
+    };
+  }
+
+  String _priorityLabel(MemoryPriority priority) {
+    return switch (priority) {
+      MemoryPriority.none => 'No priority',
+      MemoryPriority.low => 'Low priority',
+      MemoryPriority.medium => 'Medium priority',
+      MemoryPriority.high => 'High priority',
+    };
+  }
+
+  String _smartTimestamp(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) {
+      return _clockStr(dt);
+    }
+    if (diff == 1) {
+      return 'Yesterday';
+    }
+    if (diff < 7) {
+      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return names[dt.weekday - 1];
+    }
+    return '${dt.month}/${dt.day}';
   }
 
   String _clockStr(DateTime dt) {
@@ -163,100 +253,81 @@ class MemoryCard extends StatelessWidget {
     return '$hour:$minute $suffix';
   }
 
-  String _smartTimestamp(DateTime dt) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(dt.year, dt.month, dt.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return _clockStr(dt);
-    if (diff == 1) return 'Yesterday';
-    if (diff < 7) {
-      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return names[dt.weekday - 1];
-    }
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[dt.month - 1]} ${dt.day}';
+  String _fullDate(DateTime dt) {
+    return '${dt.month}/${dt.day}/${dt.year}';
   }
 
-  String _formatTimestamp(DateTime dateTime, {bool includeDate = false}) {
-    final timeStr = _clockStr(dateTime);
-    if (!includeDate) return timeStr;
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[dateTime.month - 1]} ${dateTime.day} • $timeStr';
+  String _formatDue(DateTime dt) {
+    return '${dt.month}/${dt.day} ${_clockStr(dt)}';
   }
 }
 
-enum _CardAction { delete }
+class _TagPill extends StatelessWidget {
+  const _TagPill({required this.label, required this.color});
 
-class MemoryTypeBadge extends StatelessWidget {
-  const MemoryTypeBadge({super.key, required this.type});
-
-  final MemoryType type;
+  final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final palette = switch (type) {
-      MemoryType.thought => (
-        isDark ? const Color(0xFF382F24) : const Color(0xFFEDE3D6),
-        isDark ? const Color(0xFFEADBCA) : const Color(0xFF5A4C3A),
-      ),
-      MemoryType.todo => (
-        isDark ? const Color(0xFF204D36) : const Color(0xFFDFF0E7),
-        isDark ? const Color(0xFFBFE0D0) : const Color(0xFF206348),
-      ),
-      MemoryType.idea => (
-        isDark ? const Color(0xFF382D6E) : const Color(0xFFE9E5FF),
-        isDark ? const Color(0xFFD2CBF7) : const Color(0xFF5948B0),
-      ),
-      MemoryType.reminder => (
-        isDark ? const Color(0xFF6E311B) : const Color(0xFFFFE2D7),
-        isDark ? const Color(0xFFF7D1C3) : const Color(0xFFB04E2C),
-      ),
-    };
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: palette.$1,
+        color: color.withAlpha(28),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(100)),
       ),
       child: Text(
-        switch (type) {
-          MemoryType.thought => 'Brain Dump',
-          MemoryType.todo => 'To-Do',
-          MemoryType.idea => 'Lightbulb Moment',
-          MemoryType.reminder => 'Yell At Future Me',
-        },
+        label,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: palette.$2,
-          fontWeight: FontWeight.w700,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShimmerLine extends StatefulWidget {
+  const _ShimmerLine({required this.widthFactor});
+
+  final double widthFactor;
+
+  @override
+  State<_ShimmerLine> createState() => _ShimmerLineState();
+}
+
+class _ShimmerLineState extends State<_ShimmerLine>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      widthFactor: widget.widthFactor,
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 0.35, end: 0.9).animate(_controller),
+        child: Container(
+          height: 12,
+          decoration: BoxDecoration(
+            color: Theme.of(context).dividerColor.withAlpha(100),
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
       ),
     );

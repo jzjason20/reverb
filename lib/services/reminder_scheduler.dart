@@ -77,7 +77,8 @@ class LocalNotificationReminderScheduler implements ReminderScheduler {
   @override
   Future<void> scheduleReminder(MemoryEntry entry) async {
     if (!_initialized ||
-        entry.type != MemoryType.reminder ||
+        entry.type != MemoryType.todo ||
+        entry.isComplete ||
         entry.triggerTime == null ||
         entry.triggerTime!.isBefore(DateTime.now()) ||
         kIsWeb) {
@@ -88,7 +89,7 @@ class LocalNotificationReminderScheduler implements ReminderScheduler {
 
     await _plugin.zonedSchedule(
       id: _notificationId(entry),
-      title: '⏰ Reminder',
+      title: 'Reverb',
       body: entry.taskTitle ?? entry.summary,
       scheduledDate: tz.TZDateTime.from(entry.triggerTime!, tz.local),
       notificationDetails: const NotificationDetails(

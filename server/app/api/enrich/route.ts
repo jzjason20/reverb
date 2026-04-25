@@ -1,19 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const SYSTEM_PROMPT = `You analyze voice notes for a personal memory app.
+
+CRITICAL: If the voice note contains MULTIPLE distinct actions or tasks, YOU MUST split them into separate entries.
+Examples that require splitting:
+- "I need to buy milk, call mom, and finish homework" → 3 separate todo entries
+- "Remind me to email Sarah and schedule the dentist appointment" → 2 separate todo entries
+- "I should clean my room and do laundry tomorrow" → 2 separate todo entries
+
+If it contains only ONE item or is a general thought/idea, return a single entry.
+
 Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
 {
-  "type": "thought" | "todo" | "idea" | "reminder",
-  "summary": "<one crisp sentence, max 80 chars, no emoji, no quotes>",
-  "taskTitle": "<cleaned task phrase if type is todo or reminder, otherwise null>",
-  "triggerTimeIso": "<ISO 8601 datetime if type is reminder with a resolvable time, otherwise null>"
+  "entries": [
+    {
+      "type": "braindump" | "todo" | "idea",
+      "transcript": "<the focused source text for this entry only; do not repeat the full original note when split>",
+      "summary": "<one crisp sentence, max 80 chars, no emoji, no quotes>",
+      "taskTitle": "<cleaned task phrase if type is todo, otherwise null>",
+      "triggerTimeIso": "<ISO 8601 datetime if type is todo and a resolvable time exists, otherwise null>",
+      "tags": []
+    }
+  ]
 }
 
 Classification guide:
-- reminder: user explicitly wants to be notified at a future time
-- todo: action or task with no specific time ("need to", "should", "pick up", "call", "buy")
-- idea: creative, speculative, or invention-style thought ("what if", "idea:", "could build")
-- thought: general observation, reflection, or note that fits none of the above`;
+- todo: any concrete action, obligation, or follow-up, even if phrased casually or imperatively ("need to", "should", "call", "buy", "send", "schedule", "finish")
+- idea: creative, speculative, or invention-style thought ("what if", "idea:", "could build", "I could")
+- braindump: general observation, reflection, context, or note that is not directly actionable
+
+Tags: Leave empty array [] for now. Tags will be managed by the user.
+
+SPLITTING RULES:
+1. Look for conjunctions: "and", "also", comma-separated lists
+2. Each distinct action/task becomes its own entry
+3. Each entry should have ONE clear action/purpose
+4. Keep time context: if "tomorrow" applies to all tasks, include it in each task transcript and taskTitle
+5. When splitting a note, each entry transcript must only describe that one entry`;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -61,7 +84,22 @@ export async function POST(req: NextRequest) {
 
   try {
     const parsed = JSON.parse(content);
-    return NextResponse.json(parsed);
+
+    // Support new array format: { entries: [...] }
+    // Also maintain backward compatibility with single entry format
+    if (parsed.entries && Array.isArray(parsed.entries)) {
+      return NextResponse.json(parsed);
+    } else if (parsed.type) {
+      // Legacy single-entry format, wrap in entries array
+      return NextResponse.json({
+        entries: [parsed],
+      });
+    } else {
+      return NextResponse.json(
+        { error: "invalid response format", raw: content },
+        { status: 502 },
+      );
+    }
   } catch {
     return NextResponse.json(
       { error: "bad upstream JSON", raw: content },

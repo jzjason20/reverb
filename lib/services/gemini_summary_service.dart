@@ -10,18 +10,24 @@ import '../models/memory_entry.dart';
 class GeminiEnrichmentResult {
   const GeminiEnrichmentResult({
     this.type,
+    this.transcript,
     this.summary,
     this.taskTitle,
     this.triggerTimeIso,
+    this.tags = const [],
   });
 
   final MemoryType? type;
+  final String? transcript;
   final String? summary;
   final String? taskTitle;
 
   /// ISO 8601 datetime string resolved from natural language, e.g. "tomorrow
   /// at 3pm" → "2026-04-14T15:00:00". Null when no reminder time was found.
   final String? triggerTimeIso;
+
+  /// AI-suggested tags from predefined set (uni, lexy, lifexp, reverb, random)
+  final List<String> tags;
 }
 
 abstract class TranscriptSummaryService {
@@ -34,6 +40,15 @@ abstract class TranscriptSummaryService {
   /// Returns null when offline, timed-out, or Gemini is not configured — the
   /// caller must fall back to deterministic results in that case.
   Future<GeminiEnrichmentResult?> enrich(
+    String transcript,
+    DateTime capturedAt,
+  ) async => null;
+
+  /// Multi-entry enrichment that can extract multiple todos from a single
+  /// voice note. Returns a list of enrichment results (can be 1+ entries).
+  /// Returns null when offline, timed-out, or not configured — the caller
+  /// must fall back to deterministic results in that case.
+  Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
     DateTime capturedAt,
   ) async => null;
@@ -61,9 +76,19 @@ class GeminiSummaryService implements TranscriptSummaryService {
     return result?.summary;
   }
 
-  // ── Primary enrichment call ────────────────────────────────────────────────
+  // ── Primary enrichment call (legacy, returns first entry only) ────────────
   @override
   Future<GeminiEnrichmentResult?> enrich(
+    String transcript,
+    DateTime capturedAt,
+  ) async {
+    final results = await enrichMulti(transcript, capturedAt);
+    return results?.firstOrNull;
+  }
+
+  // ── Multi-entry enrichment (primary implementation) ─────────────────────────
+  @override
+  Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
     DateTime capturedAt,
   ) async {
@@ -89,30 +114,50 @@ class GeminiSummaryService implements TranscriptSummaryService {
       }
 
       final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final entries = json['entries'] as List<dynamic>?;
 
-      final typeStr = json['type'] as String?;
-      final MemoryType? parsedType = switch (typeStr) {
-        'todo' => MemoryType.todo,
-        'idea' => MemoryType.idea,
-        'reminder' => MemoryType.reminder,
-        'thought' => MemoryType.thought,
-        _ => null,
-      };
+      if (entries == null || entries.isEmpty) {
+        return null;
+      }
 
-      final summary = (json['summary'] as String?)?.trim();
-      final taskTitle = (json['taskTitle'] as String?)?.trim();
-      final triggerTimeIso = (json['triggerTimeIso'] as String?)?.trim();
+      return entries.map((entry) {
+        final entryMap = entry as Map<String, dynamic>;
 
-      return GeminiEnrichmentResult(
-        type: parsedType,
-        summary: (summary != null && summary.isNotEmpty) ? summary : null,
-        taskTitle: (taskTitle != null && taskTitle.isNotEmpty)
-            ? taskTitle
-            : null,
-        triggerTimeIso: (triggerTimeIso != null && triggerTimeIso.isNotEmpty)
-            ? triggerTimeIso
-            : null,
-      );
+        final typeStr = entryMap['type'] as String?;
+        final MemoryType? parsedType = switch (typeStr) {
+          'todo' => MemoryType.todo,
+          'idea' => MemoryType.idea,
+          'reminder' => MemoryType.todo,
+          'thought' => MemoryType.braindump,
+          'braindump' => MemoryType.braindump,
+          _ => null,
+        };
+
+        final transcript = (entryMap['transcript'] as String?)?.trim();
+        final summary = (entryMap['summary'] as String?)?.trim();
+        final taskTitle = (entryMap['taskTitle'] as String?)?.trim();
+        final triggerTimeIso = (entryMap['triggerTimeIso'] as String?)?.trim();
+        final tags =
+            (entryMap['tags'] as List<dynamic>?)
+                ?.map((tag) => tag.toString())
+                .toList() ??
+            <String>[];
+
+        return GeminiEnrichmentResult(
+          type: parsedType,
+          transcript: (transcript != null && transcript.isNotEmpty)
+              ? transcript
+              : null,
+          summary: (summary != null && summary.isNotEmpty) ? summary : null,
+          taskTitle: (taskTitle != null && taskTitle.isNotEmpty)
+              ? taskTitle
+              : null,
+          triggerTimeIso: (triggerTimeIso != null && triggerTimeIso.isNotEmpty)
+              ? triggerTimeIso
+              : null,
+          tags: tags,
+        );
+      }).toList();
     } catch (_) {
       return null;
     }

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../controllers/reverb_controller.dart';
 import '../models/memory_entry.dart';
 import '../services/speech_capture_service.dart';
 import '../services/whisper_transcribe_service.dart';
 import '../widgets/capture_sheet.dart';
+import '../widgets/entry_editor_sheet.dart';
 import '../widgets/memory_card.dart';
+import '../widgets/tag_management_sheet.dart';
 
-class ReverbHomeScreen extends StatelessWidget {
+class ReverbHomeScreen extends StatefulWidget {
   const ReverbHomeScreen({
     super.key,
     required this.controller,
@@ -21,386 +22,701 @@ class ReverbHomeScreen extends StatelessWidget {
   final WhisperTranscribeService? whisperTranscribeService;
 
   @override
+  State<ReverbHomeScreen> createState() => _ReverbHomeScreenState();
+}
+
+class _ReverbHomeScreenState extends State<ReverbHomeScreen> {
+  String? _lastShownError;
+  String? _lastShownCaptureFeedbackId;
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: controller,
+      animation: widget.controller,
       builder: (context, _) {
+        _showPendingError();
+        _showCaptureFeedback();
+
+        final promptEntry = widget.controller.pendingDueDateEntry;
         return Scaffold(
           body: SafeArea(
-            child: Column(
-              children: [
-                _HeroPanel(controller: controller),
-                Expanded(
-                  child: controller.isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _FeedSection(controller: controller),
+            child: widget.controller.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Stack(
+                    children: [
+                      Column(
+                        children: [
+                          _TopBar(controller: widget.controller),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: _TabBody(
+                                controller: widget.controller,
+                                onOpenEntry: _openEntryEditor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (promptEntry != null)
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 92,
+                          child: _DueDatePrompt(
+                            entry: promptEntry,
+                            controller: widget.controller,
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: widget.controller.activeTab.index,
+            onDestinationSelected: (index) {
+              final tab = HomeTab.values[index];
+              widget.controller.selectTab(tab);
+              if (tab == HomeTab.tags &&
+                  widget.controller.selectedTagId == null &&
+                  widget.controller.tags.isNotEmpty) {
+                widget.controller.selectTagScope(
+                  widget.controller.tags.first.id,
+                );
+              }
+            },
+            destinations: [
+              NavigationDestination(
+                icon: Badge(
+                  isLabelVisible: widget.controller.todayCount > 0,
+                  label: Text('${widget.controller.todayCount}'),
+                  child: const Icon(Icons.today_outlined),
                 ),
-              ],
-            ),
+                selectedIcon: Badge(
+                  isLabelVisible: widget.controller.todayCount > 0,
+                  label: Text('${widget.controller.todayCount}'),
+                  child: const Icon(Icons.today),
+                ),
+                label: 'Today',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.view_agenda_outlined),
+                selectedIcon: Icon(Icons.view_agenda),
+                label: 'All',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.sell_outlined),
+                selectedIcon: Icon(Icons.sell),
+                label: 'Tags',
+              ),
+            ],
           ),
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerFloat,
           floatingActionButton: _CaptureButton(
-            controller: controller,
-            speechCaptureService: speechCaptureService,
-            whisperTranscribeService: whisperTranscribeService,
+            controller: widget.controller,
+            speechCaptureService: widget.speechCaptureService,
+            whisperTranscribeService: widget.whisperTranscribeService,
           ),
         );
       },
     );
   }
+
+  Future<void> _openEntryEditor(MemoryEntry entry) async {
+    await showEntryEditorSheet(
+      context,
+      controller: widget.controller,
+      entry: entry,
+    );
+  }
+
+  void _showPendingError() {
+    final error = widget.controller.lastErrorMessage;
+    if (error == null || error == _lastShownError) {
+      return;
+    }
+
+    _lastShownError = error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+      );
+    });
+  }
+
+  void _showCaptureFeedback() {
+    final feedback = widget.controller.latestCaptureFeedback;
+    if (feedback == null || feedback.id == _lastShownCaptureFeedbackId) {
+      return;
+    }
+
+    _lastShownCaptureFeedbackId = feedback.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(feedback.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
 }
 
-class _HeroPanel extends StatefulWidget {
-  const _HeroPanel({required this.controller});
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.controller});
 
   final ReverbController controller;
-
-  @override
-  State<_HeroPanel> createState() => _HeroPanelState();
-}
-
-class _HeroPanelState extends State<_HeroPanel> {
-  bool _isSearching = false;
-  final TextEditingController _searchController = TextEditingController();
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final title = switch (controller.activeTab) {
+      HomeTab.today => 'Today',
+      HomeTab.all => 'All',
+      HomeTab.tags => 'Tags',
+    };
+    final subtitle = switch (controller.activeTab) {
+      HomeTab.today =>
+        controller.todayCount == 0
+            ? 'Nothing due today.'
+            : '${controller.todayCount} todo${controller.todayCount == 1 ? '' : 's'} due today.',
+      HomeTab.all =>
+        '${controller.entries.where((entry) => !entry.isDeleted).length} saved entries.',
+      HomeTab.tags => controller.selectedTag?.name ?? 'Browse your tag spaces.',
+    };
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _isSearching
-                    ? TextField(
-                        controller: _searchController,
-                        autofocus: true,
-                        style: theme.textTheme.bodyMedium,
-                        onChanged: (val) {
-                          widget.controller.setSearchQuery(val);
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Search memories...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(999),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: isDark
-                              ? Colors.white10
-                              : Colors.black.withAlpha(50),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                          ),
-                        ),
-                      )
-                    : Text('Reverb', style: theme.textTheme.headlineMedium),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                style: IconButton.styleFrom(
-                  backgroundColor:
-                      _isSearching || widget.controller.searchQuery.isNotEmpty
-                      ? (isDark ? Colors.white24 : Colors.black12)
-                      : (isDark ? Colors.white10 : Colors.black.withAlpha(50)),
-                ),
-                icon: Icon(_isSearching ? Icons.close : Icons.search),
-                onPressed: () {
-                  setState(() {
-                    if (_isSearching) {
-                      _isSearching = false;
-                      _searchController.clear();
-                      widget.controller.setSearchQuery('');
-                    } else {
-                      _isSearching = true;
-                      _searchController.text = widget.controller.searchQuery;
-                    }
-                  });
-                },
-              ),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Reverb', style: theme.textTheme.headlineMedium),
+                const SizedBox(height: 6),
+                Text('$title • $subtitle', style: theme.textTheme.bodySmall),
+              ],
+            ),
           ),
-          if (widget.controller.upcomingReminders.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Future nags',
-              style: theme.textTheme.titleMedium?.copyWith(fontSize: 14),
-            ),
-            const SizedBox(height: 6),
-            ...widget.controller.upcomingReminders.map(
-              (entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '${entry.taskTitle ?? entry.summary} • ${_formatReminder(entry.triggerTime!)}',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-            ),
-          ],
+          IconButton(
+            onPressed: () {
+              showTagManagementSheet(context, controller: controller);
+            },
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Manage tags',
+          ),
         ],
       ),
     );
   }
-
-  String _formatReminder(DateTime dateTime) {
-    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
-    return '${dateTime.month}/${dateTime.day} at $hour:$minute $suffix';
-  }
 }
 
-class _FeedSection extends StatefulWidget {
-  const _FeedSection({required this.controller});
+class _TabBody extends StatelessWidget {
+  const _TabBody({required this.controller, required this.onOpenEntry});
 
   final ReverbController controller;
+  final ValueChanged<MemoryEntry> onOpenEntry;
 
   @override
-  State<_FeedSection> createState() => _FeedSectionState();
+  Widget build(BuildContext context) {
+    return switch (controller.activeTab) {
+      HomeTab.today => _EntryListTab(
+        entries: controller.todayEntries,
+        controller: controller,
+        onOpenEntry: onOpenEntry,
+        emptyTitle: 'No fires today.',
+        emptyBody: 'Anything with a due date today will show up here.',
+      ),
+      HomeTab.all => _AllTab(controller: controller, onOpenEntry: onOpenEntry),
+      HomeTab.tags => _TagsTab(
+        controller: controller,
+        onOpenEntry: onOpenEntry,
+      ),
+    };
+  }
 }
 
-class _FeedSectionState extends State<_FeedSection> {
-  late final PageController _pageController;
-  String? _lastShownError;
+class _AllTab extends StatelessWidget {
+  const _AllTab({required this.controller, required this.onOpenEntry});
 
-  void _onControllerChanged() {
-    final error = widget.controller.lastErrorMessage;
-    if (error != null && error != _lastShownError && mounted) {
-      _lastShownError = error;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
-        );
-      });
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController(
-      initialPage: FeedFilter.values.indexOf(widget.controller.activeFilter),
-    );
-    widget.controller.addListener(_onControllerChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _FeedSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final targetPage = FeedFilter.values.indexOf(
-      widget.controller.activeFilter,
-    );
-    if (_pageController.hasClients &&
-        _pageController.page?.round() != targetPage) {
-      _pageController.animateToPage(
-        targetPage,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.fastOutSlowIn,
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
-    _pageController.dispose();
-    super.dispose();
-  }
+  final ReverbController controller;
+  final ValueChanged<MemoryEntry> onOpenEntry;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: FeedFilter.values.map((filter) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(
-                    '${_filterLabel(filter)}  ${_filterCount(filter)}',
-                  ),
-                  selected: widget.controller.activeFilter == filter,
-                  showCheckmark: false,
-                  onSelected: (_) => widget.controller.selectFilter(filter),
+        _FilterBlock(
+          title: 'Type',
+          children: EntryTypeFilter.values
+              .map((filter) {
+                return _OutlineChip(
+                  label: _typeFilterLabel(filter),
+                  selected: controller.allFilter == filter,
+                  onTap: () => controller.setAllFilter(filter),
+                );
+              })
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 10),
+        _FilterBlock(
+          title: 'Tags',
+          trailing: controller.selectedTags.isEmpty
+              ? null
+              : TextButton(
+                  onPressed: controller.clearTagFilters,
+                  child: const Text('Clear'),
                 ),
-              );
-            }).toList(),
-          ),
+          children: controller.tags
+              .map((tag) {
+                return _OutlineChip(
+                  label: tag.name,
+                  selected: controller.selectedTags.contains(tag.name),
+                  accentColor: Color(tag.colorValue),
+                  onTap: () => controller.toggleTag(tag.name),
+                );
+              })
+              .toList(growable: false),
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: PageView.builder(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
-            onPageChanged: (index) {
-              final newFilter = FeedFilter.values[index];
-              if (widget.controller.activeFilter != newFilter) {
-                widget.controller.selectFilter(newFilter);
-              }
-            },
-            itemCount: FeedFilter.values.length,
-            itemBuilder: (context, filterIndex) {
-              final currentFilter = FeedFilter.values[filterIndex];
-
-              // Filter logic applied locally for each page view so they render independently
-              var displayedEntries =
-                  widget.controller.entries
-                      .where((entry) => !entry.isDeleted)
-                      .toList()
-                    ..sort(
-                      (left, right) =>
-                          right.createdAt.compareTo(left.createdAt),
-                    );
-
-              if (widget.controller.searchQuery.isNotEmpty) {
-                final q = widget.controller.searchQuery.toLowerCase();
-                displayedEntries = displayedEntries.where((entry) {
-                  return entry.summary.toLowerCase().contains(q) ||
-                      entry.transcript.toLowerCase().contains(q) ||
-                      (entry.taskTitle?.toLowerCase().contains(q) ?? false);
-                }).toList();
-              }
-
-              switch (currentFilter) {
-                case FeedFilter.all:
-                  break;
-                case FeedFilter.todos:
-                  displayedEntries = displayedEntries
-                      .where((entry) => entry.type == MemoryType.todo)
-                      .toList();
-                  break;
-                case FeedFilter.ideas:
-                  displayedEntries = displayedEntries
-                      .where((entry) => entry.type == MemoryType.idea)
-                      .toList();
-                  break;
-                case FeedFilter.thoughts:
-                  displayedEntries = displayedEntries
-                      .where((entry) => entry.type == MemoryType.thought)
-                      .toList();
-                  break;
-              }
-
-              if (displayedEntries.isEmpty) {
-                return const _EmptyState();
-              }
-
-              return ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                itemCount: displayedEntries.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final entry = displayedEntries[index];
-                  return MemoryCard(
-                    entry: entry,
-                    onTodoChanged: entry.type == MemoryType.todo
-                        ? (isComplete) =>
-                              widget.controller.toggleTodo(entry.id, isComplete)
-                        : null,
-                    onDelete: () => widget.controller.deleteEntry(entry.id),
-                    onTap: () => _showEntryDetails(context, entry),
-                  );
-                },
-              );
-            },
+          child: _EntryListTab(
+            entries: controller.allEntries,
+            controller: controller,
+            onOpenEntry: onOpenEntry,
+            emptyTitle: 'Nothing here yet.',
+            emptyBody:
+                'Your full history will stack up here once you start capturing.',
           ),
         ),
       ],
     );
   }
 
-  // --- Utility functions ---
-
-  String _filterLabel(FeedFilter filter) {
-    switch (filter) {
-      case FeedFilter.all:
-        return 'Everything';
-      case FeedFilter.todos:
-        return 'Need to do';
-      case FeedFilter.ideas:
-        return 'Genius stuff';
-      case FeedFilter.thoughts:
-        return 'Random noise';
-    }
+  String _typeFilterLabel(EntryTypeFilter filter) {
+    return switch (filter) {
+      EntryTypeFilter.all => 'All',
+      EntryTypeFilter.braindumps => 'Braindumps',
+      EntryTypeFilter.ideas => 'Ideas',
+      EntryTypeFilter.todos => 'Todos',
+    };
   }
+}
 
-  int _filterCount(FeedFilter filter) {
-    switch (filter) {
-      case FeedFilter.all:
-        return widget.controller.entries.where((e) => !e.isDeleted).length;
-      case FeedFilter.todos:
-        return widget.controller.openTodoCount;
-      case FeedFilter.ideas:
-        return widget.controller.countFor(MemoryType.idea);
-      case FeedFilter.thoughts:
-        return widget.controller.countFor(MemoryType.thought);
-    }
+class _TagsTab extends StatelessWidget {
+  const _TagsTab({required this.controller, required this.onOpenEntry});
+
+  final ReverbController controller;
+  final ValueChanged<MemoryEntry> onOpenEntry;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedTag = controller.selectedTag;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 720;
+        final tagRail = _TagRail(controller: controller, isWide: isWide);
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _FilterBlock(
+              title: selectedTag?.name ?? 'Type',
+              children: EntryTypeFilter.values
+                  .map((filter) {
+                    return _OutlineChip(
+                      label: switch (filter) {
+                        EntryTypeFilter.all => 'All',
+                        EntryTypeFilter.braindumps => 'Braindumps',
+                        EntryTypeFilter.ideas => 'Ideas',
+                        EntryTypeFilter.todos => 'Todos',
+                      },
+                      selected: controller.tagViewFilter == filter,
+                      onTap: () => controller.setTagViewFilter(filter),
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _EntryListTab(
+                entries: controller.tagEntries,
+                controller: controller,
+                onOpenEntry: onOpenEntry,
+                emptyTitle: selectedTag == null
+                    ? 'Pick a tag.'
+                    : 'No entries under ${selectedTag.name}.',
+                emptyBody: selectedTag == null
+                    ? 'Choose a tag to see its full context.'
+                    : 'This space is empty for the selected type filter.',
+              ),
+            ),
+          ],
+        );
+
+        if (isWide) {
+          return Row(
+            children: [
+              SizedBox(width: 180, child: tagRail),
+              const SizedBox(width: 16),
+              Expanded(child: content),
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            SizedBox(height: 40, child: tagRail),
+            const SizedBox(height: 12),
+            Expanded(child: content),
+          ],
+        );
+      },
+    );
   }
+}
 
-  Future<void> _showEntryDetails(
-    BuildContext context,
-    MemoryEntry entry,
-  ) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+class _TagRail extends StatelessWidget {
+  const _TagRail({required this.controller, required this.isWide});
+
+  final ReverbController controller;
+  final bool isWide;
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.tags.isNotEmpty && controller.selectedTagId == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (controller.selectedTagId == null && controller.tags.isNotEmpty) {
+          controller.selectTagScope(controller.tags.first.id);
+        }
+      });
+    }
+
+    if (isWide) {
+      return ListView.separated(
+        itemCount: controller.tags.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final tag = controller.tags[index];
+          final selected = controller.selectedTagId == tag.id;
+          return _TagRailItem(
+            tagName: tag.name,
+            color: Color(tag.colorValue),
+            selected: selected,
+            onTap: () => controller.selectTagScope(tag.id),
+          );
+        },
+      );
+    }
+
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: controller.tags.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 8),
+      itemBuilder: (context, index) {
+        final tag = controller.tags[index];
+        final selected = controller.selectedTagId == tag.id;
+        return _TagRailItem(
+          tagName: tag.name,
+          color: Color(tag.colorValue),
+          selected: selected,
+          onTap: () => controller.selectTagScope(tag.id),
+        );
+      },
+    );
+  }
+}
+
+class _TagRailItem extends StatelessWidget {
+  const _TagRailItem({
+    required this.tagName,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String tagName;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: selected ? theme.cardColor : Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? theme.colorScheme.onSurface
+                  : theme.dividerColor.withAlpha(60),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Flexible(child: Text(tagName)),
+            ],
+          ),
+        ),
       ),
-      builder: (_) => _EntryDetailSheet(entry: entry),
+    );
+  }
+}
+
+class _EntryListTab extends StatelessWidget {
+  const _EntryListTab({
+    required this.entries,
+    required this.controller,
+    required this.onOpenEntry,
+    required this.emptyTitle,
+    required this.emptyBody,
+  });
+
+  final List<MemoryEntry> entries;
+  final ReverbController controller;
+  final ValueChanged<MemoryEntry> onOpenEntry;
+  final String emptyTitle;
+  final String emptyBody;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return _EmptyState(title: emptyTitle, body: emptyBody);
+    }
+
+    final tagColors = <String, Color>{
+      for (final tag in controller.tags) tag.name: Color(tag.colorValue),
+    };
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 160),
+      itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 2),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return MemoryCard(
+          entry: entry,
+          tagColors: tagColors,
+          isProcessing: controller.isEntryProcessing(entry.id),
+          onTodoChanged: entry.type == MemoryType.todo
+              ? (value) => controller.toggleTodo(entry.id, value)
+              : null,
+          onDelete: () => controller.deleteEntry(entry.id),
+          onTap: () => onOpenEntry(entry),
+        );
+      },
+    );
+  }
+}
+
+class _FilterBlock extends StatelessWidget {
+  const _FilterBlock({
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
+
+  final String title;
+  final List<Widget> children;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor.withAlpha(40)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+              ?trailing,
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: children),
+        ],
+      ),
+    );
+  }
+}
+
+class _OutlineChip extends StatelessWidget {
+  const _OutlineChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.accentColor,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final borderColor = selected
+        ? (accentColor ?? theme.colorScheme.onSurface)
+        : theme.dividerColor.withAlpha(80);
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+          color: Colors.transparent,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (accentColor != null) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DueDatePrompt extends StatelessWidget {
+  const _DueDatePrompt({required this.entry, required this.controller});
+
+  final MemoryEntry entry;
+  final ReverbController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.cardColor,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.dividerColor.withAlpha(50)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Add a due date?', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              entry.taskTitle ?? entry.summary,
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(
+                  label: const Text('Today'),
+                  onPressed: () =>
+                      controller.applyDueDateShortcut(DueDateShortcut.today),
+                ),
+                ActionChip(
+                  label: const Text('Tomorrow'),
+                  onPressed: () =>
+                      controller.applyDueDateShortcut(DueDateShortcut.tomorrow),
+                ),
+                ActionChip(
+                  label: const Text('This week'),
+                  onPressed: () =>
+                      controller.applyDueDateShortcut(DueDateShortcut.thisWeek),
+                ),
+                ActionChip(
+                  label: const Text('Skip'),
+                  onPressed: controller.dismissDueDatePrompt,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.title, required this.body});
+
+  final String title;
+  final String body;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+        padding: const EdgeInsets.symmetric(horizontal: 28),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(18),
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
-                color: isDark ? Colors.white10 : const Color(0xFFE0D8CC),
+                color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: const Icon(Icons.graphic_eq, size: 42),
+              child: const Icon(Icons.notes_rounded),
             ),
             const SizedBox(height: 18),
             Text(
-              'Zero thoughts recorded.',
+              title,
               style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Scream into the void below. We promise to remember it forever.',
-              textAlign: TextAlign.center,
+              body,
               style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -449,243 +765,7 @@ class _CaptureButton extends StatelessWidget {
               ),
             )
           : const Icon(Icons.mic_rounded),
-      label: Text(
-        controller.isProcessing
-            ? 'Processing your ramblings...'
-            : 'Yell at your phone',
-      ),
-    );
-  }
-}
-
-// ── Entry detail bottom sheet ──────────────────────────────────────────────
-
-class _EntryDetailSheet extends StatelessWidget {
-  const _EntryDetailSheet({required this.entry});
-
-  final MemoryEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.92,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Drag handle
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colorScheme.onSurface.withAlpha(40),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Type badge + timestamp row
-                      Row(
-                        children: [
-                          MemoryTypeBadge(type: entry.type),
-                          const Spacer(),
-                          Text(
-                            _fullDate(entry.createdAt),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Summary section
-                      _SectionLabel(label: 'Summary'),
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              entry.summary,
-                              style: theme.textTheme.titleMedium,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _CopyIconButton(
-                            value: entry.summary,
-                            tooltip: 'Copy summary',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Transcript section
-                      _SectionLabel(label: 'Transcript'),
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              entry.transcript,
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _CopyIconButton(
-                            value: entry.transcript,
-                            tooltip: 'Copy transcript',
-                          ),
-                        ],
-                      ),
-
-                      // Reminder time
-                      if (entry.type == MemoryType.reminder &&
-                          entry.triggerTime != null) ...[
-                        const SizedBox(height: 20),
-                        _SectionLabel(label: 'Scheduled for'),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_fullDate(entry.triggerTime!)} at ${_clockStr(entry.triggerTime!)}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-
-                      // Todo status
-                      if (entry.type == MemoryType.todo) ...[
-                        const SizedBox(height: 20),
-                        _SectionLabel(label: 'Status'),
-                        const SizedBox(height: 6),
-                        Text(
-                          entry.isComplete
-                              ? '✓ Done — you absolute legend'
-                              : 'Still on the list...',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-
-                      const SizedBox(height: 28),
-                      // Close button
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text('Close'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  String _clockStr(DateTime dt) {
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final suffix = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
-  }
-
-  String _fullDate(DateTime dt) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        letterSpacing: 1.1,
-        color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
-      ),
-    );
-  }
-}
-
-class _CopyIconButton extends StatefulWidget {
-  const _CopyIconButton({required this.value, required this.tooltip});
-
-  final String value;
-  final String tooltip;
-
-  @override
-  State<_CopyIconButton> createState() => _CopyIconButtonState();
-}
-
-class _CopyIconButtonState extends State<_CopyIconButton> {
-  bool _copied = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.value));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Copied 👌'),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        width: 140,
-      ),
-    );
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _copied = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: widget.tooltip,
-      icon: Icon(_copied ? Icons.check_rounded : Icons.copy_rounded, size: 18),
-      onPressed: _copy,
+      label: Text(controller.isProcessing ? 'Saving...' : 'Capture'),
     );
   }
 }

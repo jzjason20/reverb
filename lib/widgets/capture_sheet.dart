@@ -335,6 +335,7 @@ class _CaptureSheetState extends State<CaptureSheet> {
                   ? null
                   : () async {
                       final navigator = Navigator.of(context);
+
                       if (_isListening) {
                         _userRequestedStop = true;
                         await Future.wait([
@@ -344,10 +345,14 @@ class _CaptureSheetState extends State<CaptureSheet> {
                           ),
                         ]);
                       }
+
                       await widget.controller.captureTranscript(
                         _textController.text,
                       );
-                      if (mounted) navigator.pop();
+
+                      if (mounted) {
+                        navigator.pop();
+                      }
                     },
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),

@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const _accent = Color(0xFFCC5C3B);
+  static const _accent = Color(0xFF171717);
 
   static ThemeData get lightTemplate {
-    const surface = Color(0xFFF7F2EA);
-    const background = Color(0xFFF4EFE8);
-    const primaryText = Color(0xFF18211E);
-    const secondaryText = Color(0xFF495652);
+    const surface = Color(0xFFF9F9F9);
+    const background = Color(0xFFFFFFFF);
+    const primaryText = Color(0xFF171717);
+    const secondaryText = Color(0xFF666666);
 
     return ThemeData(
       useMaterial3: true,
@@ -23,17 +23,18 @@ class AppTheme {
       textTheme: GoogleFonts.plusJakartaSansTextTheme(
         _buildTextTheme(primaryText, secondaryText),
       ),
-      chipTheme: _buildChipTheme(primaryText, const Color(0xFFE7DED1)),
+      dividerColor: const Color(0x14000000),
+      chipTheme: _buildChipTheme(primaryText, surface),
       cardTheme: CardThemeData(
-        color: Colors.white,
+        color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: Color(0x1F000000), width: 1),
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: _accent,
+        backgroundColor: Color(0xFF171717),
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -42,9 +43,9 @@ class AppTheme {
 
   static ThemeData get darkTemplate {
     const surface = Color(0xFF1E1E1E);
-    const background = Color(0xFF121212);
+    const background = Color(0xFF171717);
     const primaryText = Color(0xFFF5F5F5);
-    const secondaryText = Color(0xFFA0A0A0);
+    const secondaryText = Color(0xFF9A9A9A);
 
     return ThemeData(
       useMaterial3: true,
@@ -59,18 +60,19 @@ class AppTheme {
       textTheme: GoogleFonts.plusJakartaSansTextTheme(
         _buildTextTheme(primaryText, secondaryText),
       ),
-      chipTheme: _buildChipTheme(primaryText, const Color(0xFF2C2C2C)),
+      dividerColor: const Color(0x1FFFFFFF),
+      chipTheme: _buildChipTheme(primaryText, const Color(0xFF242424)),
       cardTheme: CardThemeData(
         color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: Color(0x1FFFFFFF), width: 1),
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: _accent,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: Color(0xFF171717),
         elevation: 0,
       ),
     );
@@ -100,6 +102,12 @@ class AppTheme {
         fontWeight: FontWeight.w600,
         color: primary,
       ),
+      labelSmall: TextStyle(
+        fontSize: 11,
+        height: 1.2,
+        letterSpacing: 0.4,
+        color: secondary,
+      ),
       bodyMedium: TextStyle(fontSize: 14, height: 1.4, color: secondary),
       bodySmall: TextStyle(
         fontSize: 12,
@@ -111,12 +119,15 @@ class AppTheme {
 
   static ChipThemeData _buildChipTheme(Color primaryText, Color bg) {
     return ChipThemeData(
-      selectedColor: primaryText,
-      backgroundColor: bg,
+      selectedColor: bg,
+      backgroundColor: Colors.transparent,
       labelStyle: TextStyle(fontWeight: FontWeight.w600, color: primaryText),
-      secondaryLabelStyle: TextStyle(fontWeight: FontWeight.w600, color: bg),
-      side: BorderSide.none,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      secondaryLabelStyle: TextStyle(
+        fontWeight: FontWeight.w600,
+        color: primaryText,
+      ),
+      side: BorderSide(color: primaryText.withValues(alpha: 0.2)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
     );
   }
 }

@@ -1,9 +1,11 @@
-enum MemoryType { thought, todo, idea, reminder }
+enum MemoryType { braindump, todo, idea }
+
+enum MemoryPriority { none, low, medium, high }
 
 enum SyncStatus { localOnly, pendingUpload, synced, pendingDelete, conflict }
 
 class MemoryEntry {
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
 
   const MemoryEntry({
     required this.id,
@@ -12,6 +14,7 @@ class MemoryEntry {
     required this.createdAt,
     required this.updatedAt,
     required this.type,
+    this.priority = MemoryPriority.none,
     required this.version,
     required this.syncStatus,
     required this.metadata,
@@ -20,6 +23,7 @@ class MemoryEntry {
     this.isComplete = false,
     this.lastSyncedAt,
     this.deletedAt,
+    this.tags = const [],
   });
 
   final String id;
@@ -28,6 +32,7 @@ class MemoryEntry {
   final DateTime createdAt;
   final DateTime updatedAt;
   final MemoryType type;
+  final MemoryPriority priority;
   final String? taskTitle;
   final DateTime? triggerTime;
   final bool isComplete;
@@ -35,6 +40,7 @@ class MemoryEntry {
   final SyncStatus syncStatus;
   final DateTime? lastSyncedAt;
   final DateTime? deletedAt;
+  final List<String> tags;
   final Map<String, Object?> metadata;
 
   bool get isDeleted => deletedAt != null;
@@ -46,6 +52,7 @@ class MemoryEntry {
     DateTime? createdAt,
     DateTime? updatedAt,
     MemoryType? type,
+    MemoryPriority? priority,
     Object? taskTitle = _unset,
     Object? triggerTime = _unset,
     bool? isComplete,
@@ -53,6 +60,7 @@ class MemoryEntry {
     SyncStatus? syncStatus,
     Object? lastSyncedAt = _unset,
     Object? deletedAt = _unset,
+    List<String>? tags,
     Map<String, Object?>? metadata,
   }) {
     return MemoryEntry(
@@ -62,6 +70,7 @@ class MemoryEntry {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       type: type ?? this.type,
+      priority: priority ?? this.priority,
       taskTitle: identical(taskTitle, _unset)
           ? this.taskTitle
           : taskTitle as String?,
@@ -77,6 +86,7 @@ class MemoryEntry {
       deletedAt: identical(deletedAt, _unset)
           ? this.deletedAt
           : deletedAt as DateTime?,
+      tags: tags ?? this.tags,
       metadata: metadata ?? this.metadata,
     );
   }
@@ -89,6 +99,7 @@ class MemoryEntry {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'type': type.name,
+      'priority': priority.name,
       'task_title': taskTitle,
       'trigger_time': triggerTime?.toIso8601String(),
       'is_complete': isComplete ? 1 : 0,
@@ -96,6 +107,7 @@ class MemoryEntry {
       'sync_status': syncStatus.name,
       'last_synced_at': lastSyncedAt?.toIso8601String(),
       'deleted_at': deletedAt?.toIso8601String(),
+      'tags': List<String>.from(tags),
       'schema_version': schemaVersion,
       'metadata': Map<String, Object?>.from(metadata),
     };
@@ -103,13 +115,15 @@ class MemoryEntry {
 
   factory MemoryEntry.fromMap(Map<String, Object?> map) {
     final metadata = map['metadata'];
+    final tags = map['tags'];
     return MemoryEntry(
       id: map['id']! as String,
       transcript: map['transcript']! as String,
       summary: map['summary']! as String,
       createdAt: DateTime.parse(map['created_at']! as String),
       updatedAt: DateTime.parse(map['updated_at']! as String),
-      type: MemoryType.values.byName(map['type']! as String),
+      type: _parseMemoryType(map['type'] as String?),
+      priority: _parsePriority(map['priority'] as String?),
       taskTitle: map['task_title'] as String?,
       triggerTime: map['trigger_time'] == null
           ? null
@@ -123,6 +137,9 @@ class MemoryEntry {
       deletedAt: map['deleted_at'] == null
           ? null
           : DateTime.parse(map['deleted_at']! as String),
+      tags: tags is List
+          ? List<String>.from(tags.map((e) => e.toString()))
+          : const <String>[],
       metadata: metadata is Map
           ? Map<String, Object?>.from(metadata)
           : const <String, Object?>{},
@@ -131,3 +148,23 @@ class MemoryEntry {
 }
 
 const Object _unset = Object();
+
+MemoryType _parseMemoryType(String? rawType) {
+  return switch (rawType) {
+    'braindump' => MemoryType.braindump,
+    'todo' => MemoryType.todo,
+    'idea' => MemoryType.idea,
+    'thought' => MemoryType.braindump,
+    'reminder' => MemoryType.todo,
+    _ => MemoryType.braindump,
+  };
+}
+
+MemoryPriority _parsePriority(String? rawPriority) {
+  return switch (rawPriority) {
+    'low' => MemoryPriority.low,
+    'medium' => MemoryPriority.medium,
+    'high' => MemoryPriority.high,
+    _ => MemoryPriority.none,
+  };
+}

@@ -1,19 +1,58 @@
 import '../models/memory_entry.dart';
 
 class MemoryProcessor {
+  static final RegExp _splitPattern = RegExp(
+    r'\s*(?:,|;|\band\b|\balso\b|\bthen\b)\s*',
+    caseSensitive: false,
+  );
+
+  static final RegExp _todoLeadPattern = RegExp(
+    r"^(?:remind me(?: to)?|don't forget to|todo[:\s-]*|i need to|i should|i have to|need to|should|have to|gotta|i gotta|must|remember to)\b",
+    caseSensitive: false,
+  );
+
+  static final RegExp _todoVerbPattern = RegExp(
+    r'^(?:call|buy|email|text|message|send|pay|schedule|book|submit|review|follow up|follow-up|fix|update|renew|order|clean|plan|write|finish|pick up|pick-up|reply|check|cancel|confirm|reschedule|ship|make|draft|file)\b',
+    caseSensitive: false,
+  );
+
+  static final RegExp _reflectivePattern = RegExp(
+    r'^(?:need to remember that|remember that|remember when|i noticed|i realized|i learned|i have learned)\b',
+    caseSensitive: false,
+  );
+
   MemoryEntry processTranscript(String transcript, {DateTime? now}) {
+    return processTranscriptEntries(transcript, now: now).first;
+  }
+
+  List<MemoryEntry> processTranscriptEntries(String transcript, {DateTime? now}) {
     final capturedAt = now ?? DateTime.now();
     final normalized = transcript.trim();
+    final segments = _splitTranscript(normalized);
+    final sharedDueTime = _extractDueTime(normalized, capturedAt);
+
+    return [
+      for (var index = 0; index < segments.length; index++)
+        _buildEntry(
+          segments[index],
+          capturedAt.add(Duration(microseconds: index)),
+          inheritedTriggerTime: sharedDueTime,
+        ),
+    ];
+  }
+
+  MemoryEntry _buildEntry(
+    String transcript,
+    DateTime capturedAt, {
+    DateTime? inheritedTriggerTime,
+  }) {
+    final normalized = transcript.trim();
     var type = _classify(normalized);
-    var triggerTime = type == MemoryType.reminder
-        ? _extractReminderTime(normalized, capturedAt)
+    final triggerTime = type == MemoryType.todo
+        ? (_extractDueTime(normalized, capturedAt) ?? inheritedTriggerTime)
         : null;
 
-    if (type == MemoryType.reminder && triggerTime == null) {
-      type = MemoryType.todo;
-    }
-
-    final taskTitle = type == MemoryType.todo || type == MemoryType.reminder
+    final taskTitle = type == MemoryType.todo
         ? _extractTaskTitle(normalized)
         : null;
 
@@ -30,8 +69,10 @@ class MemoryProcessor {
       type: type,
       taskTitle: taskTitle,
       triggerTime: triggerTime,
+      priority: MemoryPriority.none,
       version: 1,
       syncStatus: SyncStatus.localOnly,
+      tags: const ['others'],
       metadata: <String, Object?>{
         'schema_version': MemoryEntry.schemaVersion,
         'storage_strategy': 'local_first',
@@ -54,7 +95,7 @@ class MemoryProcessor {
         now: now.subtract(const Duration(hours: 6)),
       ),
       processTranscript(
-        'remind me to call mom tomorrow at 6 pm',
+        'call mom tomorrow at 6 pm',
         now: now.subtract(const Duration(days: 1)),
       ),
       processTranscript(
@@ -68,24 +109,6 @@ class MemoryProcessor {
     final lower = transcript.toLowerCase();
 
     if (_containsAny(lower, const [
-      'remind me',
-      'remind me to',
-      'remind me at',
-      'remind me in',
-    ])) {
-      return MemoryType.reminder;
-    }
-
-    if (_containsAny(lower, const [
-      'i need to',
-      'i should',
-      'todo',
-      "don't forget to",
-    ])) {
-      return MemoryType.todo;
-    }
-
-    if (_containsAny(lower, const [
       'idea:',
       'what if',
       'i could build',
@@ -94,7 +117,48 @@ class MemoryProcessor {
       return MemoryType.idea;
     }
 
-    return MemoryType.thought;
+    if (_reflectivePattern.hasMatch(lower)) {
+      return MemoryType.braindump;
+    }
+
+    if (_todoLeadPattern.hasMatch(lower) || _todoVerbPattern.hasMatch(lower)) {
+      return MemoryType.todo;
+    }
+
+    return MemoryType.braindump;
+  }
+
+  List<String> _splitTranscript(String transcript) {
+    if (_classify(transcript) != MemoryType.todo) {
+      return [transcript.trim()];
+    }
+
+    if (!_splitPattern.hasMatch(transcript)) {
+      return [transcript.trim()];
+    }
+
+    final parts = transcript
+        .split(_splitPattern)
+        .map(_normalizeSegment)
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length < 2) {
+      return [transcript.trim()];
+    }
+
+    final todoCount = parts.where((part) => _classify(part) == MemoryType.todo).length;
+    if (todoCount < 2) {
+      return [transcript.trim()];
+    }
+
+    return parts;
+  }
+
+  String _normalizeSegment(String segment) {
+    return segment
+        .replaceFirst(RegExp(r'^(?:and|also|then)\s+', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   bool _containsAny(String value, List<String> triggers) {
@@ -107,9 +171,6 @@ class MemoryProcessor {
     required String? taskTitle,
   }) {
     if (taskTitle != null && taskTitle.isNotEmpty) {
-      if (type == MemoryType.reminder) {
-        return 'Reminder: $taskTitle';
-      }
       if (type == MemoryType.todo) {
         return taskTitle;
       }
@@ -130,6 +191,14 @@ class MemoryProcessor {
       RegExp(r"^don't forget to\s+"),
       RegExp(r'^i need to\s+'),
       RegExp(r'^i should\s+'),
+      RegExp(r'^i have to\s+'),
+      RegExp(r'^need to\s+'),
+      RegExp(r'^should\s+'),
+      RegExp(r'^have to\s+'),
+      RegExp(r'^gotta\s+'),
+      RegExp(r'^i gotta\s+'),
+      RegExp(r'^must\s+'),
+      RegExp(r'^remember to\s+'),
       RegExp(r'^todo[:\s-]*'),
     ];
 
@@ -160,6 +229,7 @@ class MemoryProcessor {
           '',
         )
         .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[.!?]+$'), '')
         .trim();
 
     if (task.isEmpty) {
@@ -169,7 +239,7 @@ class MemoryProcessor {
     return _sentenceCase(task);
   }
 
-  DateTime? _extractReminderTime(String transcript, DateTime now) {
+  DateTime? _extractDueTime(String transcript, DateTime now) {
     final lower = transcript.toLowerCase();
 
     final relativeMatch = RegExp(
