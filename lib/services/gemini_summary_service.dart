@@ -41,8 +41,9 @@ abstract class TranscriptSummaryService {
   /// caller must fall back to deterministic results in that case.
   Future<GeminiEnrichmentResult?> enrich(
     String transcript,
-    DateTime capturedAt,
-  ) async => null;
+    DateTime capturedAt, {
+    List<String> availableTags = const [],
+  }) async => null;
 
   /// Multi-entry enrichment that can extract multiple todos from a single
   /// voice note. Returns a list of enrichment results (can be 1+ entries).
@@ -50,8 +51,9 @@ abstract class TranscriptSummaryService {
   /// must fall back to deterministic results in that case.
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
-    DateTime capturedAt,
-  ) async => null;
+    DateTime capturedAt, {
+    List<String> availableTags = const [],
+  }) async => null;
 }
 
 class GeminiSummaryService implements TranscriptSummaryService {
@@ -80,9 +82,14 @@ class GeminiSummaryService implements TranscriptSummaryService {
   @override
   Future<GeminiEnrichmentResult?> enrich(
     String transcript,
-    DateTime capturedAt,
-  ) async {
-    final results = await enrichMulti(transcript, capturedAt);
+    DateTime capturedAt, {
+    List<String> availableTags = const [],
+  }) async {
+    final results = await enrichMulti(
+      transcript,
+      capturedAt,
+      availableTags: availableTags,
+    );
     return results?.firstOrNull;
   }
 
@@ -90,8 +97,9 @@ class GeminiSummaryService implements TranscriptSummaryService {
   @override
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
-    DateTime capturedAt,
-  ) async {
+    DateTime capturedAt, {
+    List<String> availableTags = const [],
+  }) async {
     if (!isConfigured) return null;
 
     try {
@@ -105,6 +113,7 @@ class GeminiSummaryService implements TranscriptSummaryService {
             body: jsonEncode({
               'transcript': transcript,
               'capturedAt': capturedAt.toIso8601String(),
+              'availableTags': availableTags,
             }),
           )
           .timeout(_timeout);

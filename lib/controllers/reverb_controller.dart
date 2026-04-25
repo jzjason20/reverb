@@ -344,7 +344,11 @@ class ReverbController extends ChangeNotifier {
       final processedEntries = _processor.processTranscriptEntries(normalized);
       final processed = processedEntries.first;
       final baseEntry = processed.copyWith(
-        tags: _normalizeAssignedTags(processed.tags),
+        tags: _resolveAssignedTags(
+          preferredTags: processed.tags,
+          transcript: processed.transcript,
+          source: 'capture-base',
+        ),
         metadata: <String, Object?>{
           ...processed.metadata,
           'capture_group_id': captureGroupId,
@@ -538,19 +542,40 @@ class ReverbController extends ChangeNotifier {
       final aiResults = await _summaryService.enrichMulti(
         transcript,
         baseEntry.createdAt,
+        availableTags: _availableAiTags(),
+      );
+      _logTagDebug(
+        'available=${_availableAiTags()} aiReturned=${aiResults?.map((result) => result.tags).toList() ?? const []}',
+      );
+      final captureContextTags = _resolveAssignedTags(
+        preferredTags: baseEntry.tags,
+        transcript: transcript,
+        source: 'capture-context',
       );
 
       if (aiResults == null || aiResults.isEmpty) {
-        await _persistCaptureEntries(deterministicEntries);
-        _setCaptureFeedback(deterministicEntries);
-        _pendingDueDateEntryId = _firstTodoMissingDue(deterministicEntries)?.id;
+        final enrichedDeterministicEntries = _inheritCaptureTags(
+          deterministicEntries,
+          captureContextTags,
+        );
+        await _persistCaptureEntries(enrichedDeterministicEntries);
+        _setCaptureFeedback(enrichedDeterministicEntries);
+        _pendingDueDateEntryId = _firstTodoMissingDue(
+          enrichedDeterministicEntries,
+        )?.id;
         return;
       }
 
       if (_shouldPreferDeterministicSplit(aiResults, deterministicEntries)) {
-        await _persistCaptureEntries(deterministicEntries);
-        _setCaptureFeedback(deterministicEntries);
-        _pendingDueDateEntryId = _firstTodoMissingDue(deterministicEntries)?.id;
+        final enrichedDeterministicEntries = _inheritCaptureTags(
+          deterministicEntries,
+          captureContextTags,
+        );
+        await _persistCaptureEntries(enrichedDeterministicEntries);
+        _setCaptureFeedback(enrichedDeterministicEntries);
+        _pendingDueDateEntryId = _firstTodoMissingDue(
+          enrichedDeterministicEntries,
+        )?.id;
         return;
       }
 
@@ -561,6 +586,7 @@ class ReverbController extends ChangeNotifier {
         entryId: baseEntry.id,
         preserveBaseTaskTitle: true,
         preferEntrySpecificTranscript: aiResults.length > 1,
+        inheritedTags: captureContextTags,
       );
       await _repository.upsertEntry(primaryEntry);
       await _reminderScheduler.scheduleReminder(primaryEntry);
@@ -573,6 +599,7 @@ class ReverbController extends ChangeNotifier {
           entryId: _generateEntryId(),
           preserveBaseTaskTitle: false,
           preferEntrySpecificTranscript: true,
+          inheritedTags: captureContextTags,
         );
         await _repository.upsertEntry(derivedEntry);
         await _reminderScheduler.scheduleReminder(derivedEntry);
@@ -583,9 +610,13 @@ class ReverbController extends ChangeNotifier {
 
       _pendingDueDateEntryId = _firstTodoMissingDue(createdEntries)?.id;
     } catch (_) {
-      final deterministicEntries = _buildDeterministicCaptureEntries(
-        baseEntry,
-        processedEntries,
+      final deterministicEntries = _inheritCaptureTags(
+        _buildDeterministicCaptureEntries(baseEntry, processedEntries),
+        _resolveAssignedTags(
+          preferredTags: baseEntry.tags,
+          transcript: transcript,
+          source: 'capture-context-error',
+        ),
       );
       await _persistCaptureEntries(deterministicEntries);
       _setCaptureFeedback(deterministicEntries);
@@ -599,7 +630,11 @@ class ReverbController extends ChangeNotifier {
 
   MemoryEntry _markAiComplete(MemoryEntry entry) {
     return entry.copyWith(
-      tags: _normalizeAssignedTags(entry.tags),
+      tags: _resolveAssignedTags(
+        preferredTags: entry.tags,
+        transcript: entry.transcript,
+        source: 'complete-entry',
+      ),
       metadata: <String, Object?>{...entry.metadata, 'ai_state': 'complete'},
     );
   }
@@ -610,6 +645,7 @@ class ReverbController extends ChangeNotifier {
     required String entryId,
     required bool preserveBaseTaskTitle,
     required bool preferEntrySpecificTranscript,
+    List<String> inheritedTags = const <String>[],
   }) {
     final resolvedType = result.type ?? baseEntry.type;
     final dueAt = result.triggerTimeIso == null
@@ -644,7 +680,12 @@ class ReverbController extends ChangeNotifier {
       summary: summary,
       taskTitle: taskTitle,
       triggerTime: dueAt,
-      tags: _normalizeAssignedTags(result.tags),
+      tags: _resolveAssignedTags(
+        preferredTags: result.tags,
+        transcript: focusedTranscript,
+        source: entryId == baseEntry.id ? 'ai-primary' : 'ai-derived',
+        inheritedTags: inheritedTags,
+      ),
       priority: MemoryPriority.none,
       metadata: <String, Object?>{
         ...baseEntry.metadata,
@@ -666,7 +707,11 @@ class ReverbController extends ChangeNotifier {
     for (final entry in processedEntries.skip(1)) {
       entries.add(
         entry.copyWith(
-          tags: _normalizeAssignedTags(entry.tags),
+          tags: _resolveAssignedTags(
+            preferredTags: entry.tags,
+            transcript: entry.transcript,
+            source: 'deterministic-derived',
+          ),
           metadata: <String, Object?>{
             ...entry.metadata,
             'capture_group_id': captureGroupId,
@@ -685,6 +730,28 @@ class ReverbController extends ChangeNotifier {
       await _repository.upsertEntry(entry);
       await _reminderScheduler.scheduleReminder(entry);
     }
+  }
+
+  List<MemoryEntry> _inheritCaptureTags(
+    List<MemoryEntry> entries,
+    List<String> captureContextTags,
+  ) {
+    if (_isOnlyFallbackTag(captureContextTags)) {
+      return entries;
+    }
+
+    return entries
+        .map(
+          (entry) => entry.copyWith(
+            tags: _resolveAssignedTags(
+              preferredTags: entry.tags,
+              transcript: entry.transcript,
+              source: 'capture-inherit',
+              inheritedTags: captureContextTags,
+            ),
+          ),
+        )
+        .toList(growable: false);
   }
 
   bool _shouldPreferDeterministicSplit(
@@ -781,6 +848,69 @@ class ReverbController extends ChangeNotifier {
     }
 
     return normalized;
+  }
+
+  List<String> _resolveAssignedTags({
+    required List<String> preferredTags,
+    required String transcript,
+    required String source,
+    List<String> inheritedTags = const <String>[],
+  }) {
+    final normalizedPreferred = _normalizeAssignedTags(preferredTags);
+    if (!_isOnlyFallbackTag(normalizedPreferred)) {
+      _logTagDebug(
+        '$source applied=$normalizedPreferred raw=$preferredTags text=${_shortLogText(transcript)}',
+      );
+      return normalizedPreferred;
+    }
+
+    final suggested = TagManager.suggestTags(transcript, _availableAiTags());
+    final normalizedSuggested = _normalizeAssignedTags(suggested);
+    if (!_isOnlyFallbackTag(normalizedSuggested)) {
+      _logTagDebug(
+        '$source fallback=$normalizedSuggested raw=$preferredTags text=${_shortLogText(transcript)}',
+      );
+      return normalizedSuggested;
+    }
+
+    final normalizedInherited = _normalizeAssignedTags(inheritedTags);
+    if (!_isOnlyFallbackTag(normalizedInherited)) {
+      _logTagDebug(
+        '$source inherited=$normalizedInherited raw=$preferredTags text=${_shortLogText(transcript)}',
+      );
+      return normalizedInherited;
+    }
+
+    _logTagDebug(
+      '$source no-tags raw=$preferredTags inherited=$inheritedTags available=${_availableAiTags()} text=${_shortLogText(transcript)}',
+    );
+    return normalizedPreferred;
+  }
+
+  List<String> _availableAiTags() {
+    return _tags
+        .where((tag) => tag.name != TagDefinition.othersName)
+        .map((tag) => tag.name)
+        .toList(growable: false);
+  }
+
+  bool _isOnlyFallbackTag(List<String> tags) {
+    return tags.length == 1 && tags.single == TagDefinition.othersName;
+  }
+
+  void _logTagDebug(String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('[Reverb][tags] $message');
+  }
+
+  String _shortLogText(String value) {
+    final compact = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= 96) {
+      return compact;
+    }
+    return '${compact.substring(0, 93)}...';
   }
 
   String? _validateAndNormalizeTagName(String rawName) {

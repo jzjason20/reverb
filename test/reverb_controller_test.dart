@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reverb/controllers/reverb_controller.dart';
 import 'package:reverb/models/memory_entry.dart';
+import 'package:reverb/models/tag_definition.dart';
 import 'package:reverb/repositories/in_memory_memory_repository.dart';
 import 'package:reverb/services/gemini_summary_service.dart';
 import 'package:reverb/services/memory_processor.dart';
@@ -154,6 +155,165 @@ void main() {
       ]);
     },
   );
+
+  test('passes available tags to AI and applies returned tags', () async {
+    final now = DateTime(2026, 4, 25, 10);
+    final summaryService = _TaggingSummaryService();
+    final controller = ReverbController(
+      repository: InMemoryMemoryRepository(
+        seedTags: [
+          TagDefinition.defaultOthers(),
+          TagDefinition(
+            id: 'tag_uni',
+            name: 'uni',
+            colorValue: 0xFF2196F3,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          TagDefinition(
+            id: 'tag_work',
+            name: 'work',
+            colorValue: 0xFF4CAF50,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      ),
+      processor: MemoryProcessor(),
+      reminderScheduler: _NoopReminderScheduler(),
+      summaryService: summaryService,
+    );
+
+    await controller.load();
+    await controller.captureTranscript(
+      'email my professor about the assignment',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(summaryService.lastAvailableTags, ['uni', 'work']);
+
+    final visibleEntries = controller.entries
+        .where((entry) => !entry.isDeleted)
+        .toList();
+    expect(visibleEntries, hasLength(1));
+    expect(visibleEntries.single.tags, ['uni']);
+  });
+
+  test(
+    'falls back to transcript tag matching when AI returns no tags',
+    () async {
+      final now = DateTime(2026, 4, 25, 10);
+      final controller = ReverbController(
+        repository: InMemoryMemoryRepository(
+          seedTags: [
+            TagDefinition.defaultOthers(),
+            TagDefinition(
+              id: 'tag_reverb',
+              name: 'reverb',
+              colorValue: 0xFF2196F3,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+        processor: MemoryProcessor(),
+        reminderScheduler: _NoopReminderScheduler(),
+        summaryService: _StubSummaryService(
+          results: const [
+            GeminiEnrichmentResult(
+              type: MemoryType.todo,
+              transcript: 'finish the reverb landing page copy',
+              summary: 'Finish landing page copy',
+              taskTitle: 'Finish landing page copy',
+              tags: [],
+            ),
+          ],
+        ),
+      );
+
+      await controller.load();
+      await controller.captureTranscript('finish the reverb landing page copy');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final visibleEntries = controller.entries
+          .where((entry) => !entry.isDeleted)
+          .toList();
+      expect(visibleEntries, hasLength(1));
+      expect(visibleEntries.single.tags, ['reverb']);
+    },
+  );
+
+  test(
+    'inherits capture-level tags across split entries when AI returns none',
+    () async {
+      final now = DateTime(2026, 4, 25, 10);
+      final controller = ReverbController(
+        repository: InMemoryMemoryRepository(
+          seedTags: [
+            TagDefinition.defaultOthers(),
+            TagDefinition(
+              id: 'tag_asklexy',
+              name: 'asklexy',
+              colorValue: 0xFF2196F3,
+              createdAt: now,
+              updatedAt: now,
+            ),
+            TagDefinition(
+              id: 'tag_reverb',
+              name: 'reverb',
+              colorValue: 0xFF4CAF50,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+        processor: MemoryProcessor(),
+        reminderScheduler: _NoopReminderScheduler(),
+        summaryService: _StubSummaryService(
+          results: const [
+            GeminiEnrichmentResult(
+              type: MemoryType.todo,
+              transcript: 'Check the payment flow for the mobile app by today.',
+              summary: 'Check the payment flow',
+              taskTitle: 'Check the payment flow',
+              tags: [],
+            ),
+            GeminiEnrichmentResult(
+              type: MemoryType.todo,
+              transcript:
+                  'Submit the mobile app to Google Play for review by today.',
+              summary: 'Submit to Google Play',
+              taskTitle: 'Submit to Google Play',
+              tags: [],
+            ),
+            GeminiEnrichmentResult(
+              type: MemoryType.todo,
+              transcript:
+                  'Ensure the UI is aligned in all mobile screens by today.',
+              summary: 'Align the UI',
+              taskTitle: 'Align the UI',
+              tags: [],
+            ),
+          ],
+        ),
+      );
+
+      await controller.load();
+      await controller.captureTranscript(
+        'I have to do these things for AskLexy by today. Check the payment flow for the mobile app and submit it to Google Play for review and ensure the UI is aligned in all mobile screens.',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final visibleEntries = controller.entries
+          .where((entry) => !entry.isDeleted)
+          .toList();
+      expect(visibleEntries, hasLength(3));
+      expect(
+        visibleEntries.map((entry) => entry.tags),
+        everyElement(['asklexy']),
+      );
+    },
+  );
 }
 
 class _NoopReminderScheduler implements ReminderScheduler {
@@ -175,13 +335,18 @@ class _NoopSummaryService implements TranscriptSummaryService {
   Future<String?> summarize(entry) async => null;
 
   @override
-  Future<GeminiEnrichmentResult?> enrich(transcript, capturedAt) async => null;
+  Future<GeminiEnrichmentResult?> enrich(
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => null;
 
   @override
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
-    transcript,
-    capturedAt,
-  ) async => null;
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => null;
 }
 
 class _StubSummaryService implements TranscriptSummaryService {
@@ -196,13 +361,59 @@ class _StubSummaryService implements TranscriptSummaryService {
   Future<String?> summarize(entry) async => null;
 
   @override
-  Future<GeminiEnrichmentResult?> enrich(transcript, capturedAt) async {
+  Future<GeminiEnrichmentResult?> enrich(
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async {
     return results.firstOrNull;
   }
 
   @override
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
-    transcript,
-    capturedAt,
-  ) async => results;
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => results;
+}
+
+class _TaggingSummaryService implements TranscriptSummaryService {
+  List<String>? lastAvailableTags;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<String?> summarize(entry) async => null;
+
+  @override
+  Future<GeminiEnrichmentResult?> enrich(
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async {
+    return (await enrichMulti(
+      transcript,
+      capturedAt,
+      availableTags: availableTags,
+    ))?.firstOrNull;
+  }
+
+  @override
+  Future<List<GeminiEnrichmentResult>?> enrichMulti(
+    String transcript,
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async {
+    lastAvailableTags = availableTags;
+    return const [
+      GeminiEnrichmentResult(
+        type: MemoryType.todo,
+        transcript: 'email my professor about the assignment',
+        summary: 'Email professor about assignment',
+        taskTitle: 'Email professor about assignment',
+        tags: ['uni'],
+      ),
+    ];
+  }
 }

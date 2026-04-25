@@ -120,14 +120,16 @@ class _NoopSummaryService implements TranscriptSummaryService {
   @override
   Future<GeminiEnrichmentResult?> enrich(
     String transcript,
-    DateTime capturedAt,
-  ) async => null;
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => null;
 
   @override
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
-    DateTime capturedAt,
-  ) async => null;
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => null;
 }
 
 class _SplitSummaryService implements TranscriptSummaryService {
@@ -140,8 +142,9 @@ class _SplitSummaryService implements TranscriptSummaryService {
   @override
   Future<GeminiEnrichmentResult?> enrich(
     String transcript,
-    DateTime capturedAt,
-  ) async {
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async {
     return const GeminiEnrichmentResult(
       type: MemoryType.todo,
       summary: 'Buy milk',
@@ -152,8 +155,9 @@ class _SplitSummaryService implements TranscriptSummaryService {
   @override
   Future<List<GeminiEnrichmentResult>?> enrichMulti(
     String transcript,
-    DateTime capturedAt,
-  ) async => const [
+    DateTime capturedAt, {
+    List<String> availableTags = const <String>[],
+  }) async => const [
     GeminiEnrichmentResult(
       type: MemoryType.todo,
       summary: 'Buy milk',
